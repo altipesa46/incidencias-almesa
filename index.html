@@ -560,6 +560,7 @@
             <div class="field"><label>Estado</label><select id="fEstado"><option value="">Todos</option></select></div>
             <div class="field"><label>Recogida *</label><select id="fRecogida"><option value="">Todas</option></select></div>
             <div class="field"><label>Cargo agencia</label><select id="fCargoAgencia"><option value="">Todos</option></select></div>
+            <div class="field"><label>Acción *</label><select id="fAccion"><option value="">Todas</option></select></div>
             <div class="field"><label>Fecha apertura desde</label><input type="date" id="fFechaDesde"></div>
             <div class="field"><label>Fecha apertura hasta</label><input type="date" id="fFechaHasta"></div>
           </div>
@@ -568,7 +569,7 @@
             <div class="spacer"></div>
             <button class="btn btn-primary" onclick="renderConsulta()">🔍 Buscar</button>
           </div>
-          <div class="hint" style="margin-top:8px;">* Origen y Recogida: se buscan incidencias con alguna línea que tenga ese valor.</div>
+          <div class="hint" style="margin-top:8px;">* Origen, Recogida y Acción: se buscan incidencias con alguna línea que tenga ese valor.</div>
         </div>
       </div>
 
@@ -3412,7 +3413,7 @@ async function generarImpresoAccionGuardada(incId, bloqueId){
 /* ================= CONSULTA ================= */
 function limpiarFiltros(){
   ['fNum','fUsuario','fCliente','fAlbaran','fFechaDesde','fFechaHasta'].forEach(id=> document.getElementById(id).value='');
-  ['fOrigen','fEstado','fRecogida','fCargoAgencia'].forEach(id=> document.getElementById(id).value='');
+  ['fOrigen','fEstado','fRecogida','fCargoAgencia','fAccion'].forEach(id=> document.getElementById(id).value='');
   renderConsulta();
 }
 function eliminarIncidencia(id){
@@ -3470,6 +3471,7 @@ function renderConsulta(){
   const estado = document.getElementById('fEstado').value;
   const recogida = document.getElementById('fRecogida').value;
   const cargoAgencia = document.getElementById('fCargoAgencia').value;
+  const accion = document.getElementById('fAccion').value;
   const desde = document.getElementById('fFechaDesde').value;
   const hasta = document.getElementById('fFechaHasta').value;
 
@@ -3482,6 +3484,7 @@ function renderConsulta(){
     if(estado && inc.estado!==estado) return false;
     if(recogida && !(inc.recogidas||[]).includes(recogida)) return false;
     if(cargoAgencia && (inc.cargoAgencia||'')!==cargoAgencia) return false;
+    if(accion && lineasConAccionCount(inc, accion)===0) return false;
     if(desde && inc.fechaApertura < desde) return false;
     if(hasta && inc.fechaApertura > hasta) return false;
     return true;
@@ -3831,6 +3834,7 @@ function init(){
   appendOptions(document.getElementById('fEstado'), APP_DATA.estados, e=>e.codigo, e=>e.descripcion);
   appendOptions(document.getElementById('fRecogida'), APP_DATA.recogida, o=>o, o=>o);
   appendOptions(document.getElementById('fCargoAgencia'), CARGO_AGENCIA_OPTS, o=>o, o=>o);
+  appendOptions(document.getElementById('fAccion'), ACCIONES_INCIDENCIA, a=>a.cod, a=>a.desc);
 
   const params = new URLSearchParams(location.search);
   const incParam = params.get('incidencia');
