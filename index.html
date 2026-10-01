@@ -595,6 +595,10 @@
                 <th>Estado</th>
                 <th>Recogida</th>
                 <th>Cargo agencia</th>
+                <th class="num" title="Nº de líneas de la incidencia con una Reposición aplicada">Reposición</th>
+                <th class="num" title="Nº de líneas de la incidencia con una Reparación aplicada">Reparación</th>
+                <th class="num" title="Nº de líneas de la incidencia con un Cambio aplicado">Cambio</th>
+                <th class="num" title="Nº de líneas de la incidencia con un Abono aplicado">Abono</th>
                 <th class="num">Líneas</th>
                 <th style="width:40px;"></th>
               </tr>
@@ -1121,6 +1125,16 @@ function accionesTiposDeLinea(bloques, lineaId){
 function accionesDescLinea(bloques, lineaId){
   const tipos = accionesTiposDeLinea(bloques, lineaId);
   return tipos.length ? tipos.map(accionDesc).join(' + ') : null;
+}
+/* Nº de líneas (activas, no eliminadas) de una incidencia que tienen aplicada una acción de tipo
+   `tipoCod` (Reposición/Reparación/Cambio/Abono). Una línea puede tener varias acciones a la vez
+   (V54: p. ej. Cambio + Abono sobre distintas cantidades de la misma línea), así que puede sumar en
+   más de una de estas columnas a la vez — no hay doble contabilización dentro de una misma columna,
+   cada línea cuenta como mucho 1 vez por tipo de acción. Se usa en la cabecera de Consulta (una
+   columna por tipo de acción) y en su exportación a Excel, para que ambas coincidan siempre. */
+function lineasConAccionCount(inc, tipoCod){
+  const lineasActivas = (inc.lineas||[]).filter(l=>!l.eliminada);
+  return lineasActivas.filter(l=> accionesTiposDeLinea(inc.accionesRealizar, l.id).includes(tipoCod)).length;
 }
 
 function toast(msg, type){
@@ -3479,7 +3493,7 @@ function renderConsulta(){
   document.getElementById('consultaCount').textContent = `${list.length} incidencia(s) de ${incidencias.length}`;
   const tbody = document.getElementById('consultaTbody');
   if(!list.length){
-    tbody.innerHTML = `<tr><td colspan="14"><div class="empty-state">No hay incidencias que coincidan con la búsqueda.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="18"><div class="empty-state">No hay incidencias que coincidan con la búsqueda.</div></td></tr>`;
     return;
   }
   const expandedVisible = expandedId!=null && list.some(i=>i.id===expandedId);
@@ -3498,6 +3512,7 @@ function renderConsulta(){
       <td>${estadoPill(inc.estado)}</td>
       <td>${recogidasChipsHtml(inc.recogidas)}</td>
       <td>${cargoAgenciaPill(inc.cargoAgencia)}</td>
+      ${ACCIONES_INCIDENCIA.map(a=>`<td class="num">${lineasConAccionCount(inc, a.cod)}</td>`).join('')}
       <td class="num">${inc.lineas.length}</td>
       <td><button class="btn btn-sm btn-danger" data-delinc="${inc.id}" title="Eliminar incidencia">🗑</button></td>
     </tr>` + (isExp ? buildExpandRow(inc) : '');
@@ -3569,7 +3584,7 @@ function buildFileListReadonly(files, incId, key){
   </div>`).join('');
 }
 function buildExpandRow(inc){
-  return `<tr class="expand-panel"><td colspan="15"><div class="expand-inner">
+  return `<tr class="expand-panel"><td colspan="19"><div class="expand-inner">
     <div class="toolbar" style="margin-bottom:14px;">
       <div class="spacer"></div>
       <button class="btn btn-sm btn-primary" data-editinc="${inc.id}">✎ Editar incidencia</button>
@@ -3662,6 +3677,10 @@ function exportarExcel(){
 function cabeceraExcelCols(inc){
   const origenesCols = {};
   APP_DATA.origen.forEach(o=>{ origenesCols[`Origen ${o}`] = (inc.origenes||[]).includes(o) ? 'Sí' : 'No'; });
+  // Mismo cálculo que las columnas "Reposición/Reparación/Cambio/Abono" de la tabla de Consulta
+  // (lineasConAccionCount): nº de líneas con esa acción aplicada, para que Excel coincida con pantalla.
+  const accionesCols = {};
+  ACCIONES_INCIDENCIA.forEach(a=>{ accionesCols[`Líneas ${a.desc}`] = lineasConAccionCount(inc, a.cod); });
   return {
     'Nº Incidencia': inc.id,
     'Fecha apertura': fmtDate(inc.fechaApertura),
@@ -3675,6 +3694,7 @@ function cabeceraExcelCols(inc){
     'Estado': estadoDesc(inc.estado),
     'Recogida': (inc.recogidas||[]).join(', '),
     'Cargo agencia': inc.cargoAgencia || '',
+    ...accionesCols,
     'Nº Líneas': inc.lineas.length,
     'Observaciones': inc.observaciones || ''
   };
@@ -3684,7 +3704,7 @@ async function ejecutarExportarExcel(modo){
   if(!lastConsultaList.length){ toast('No hay resultados que exportar. Ajusta la búsqueda.', 'error'); return; }
   if(typeof XLSX === 'undefined'){ toast('La librería de exportación aún está cargando, prueba de nuevo en unos segundos.', 'error'); return; }
 
-  const cabeceraColWidths = [{wch:11},{wch:12},{wch:15},{wch:9},{wch:34},{wch:13},{wch:10},{wch:22},{wch:12},{wch:13},{wch:12},{wch:11},{wch:12},{wch:12},{wch:9},{wch:40}];
+  const cabeceraColWidths = [{wch:11},{wch:12},{wch:15},{wch:9},{wch:34},{wch:13},{wch:10},{wch:22},{wch:12},{wch:13},{wch:12},{wch:11},{wch:12},{wch:12},{wch:14},{wch:14},{wch:11},{wch:11},{wch:9},{wch:40}];
   let rows, sheetName, filenameSuffix, colWidths;
 
   if(modo==='lineas'){
