@@ -370,7 +370,7 @@
       </div>
     </div>
     <h2>Acceso</h2>
-    <div class="hint">Introduce tu usuario y contraseña para entrar al módulo de incidencias.</div>
+    <div class="hint">Introduce tu correo y contraseña para entrar al módulo de incidencias.</div>
     <form onsubmit="return intentarLogin(event)">
       <div class="field">
         <label>Usuario</label>
@@ -771,6 +771,32 @@
 
 <script src="data.js"></script>
 <script>
+/* ================= MODO DE FUNCIONAMIENTO =================
+   · CLOUD (https://incidencias-almesa.altipesa.workers.dev u otro host de la lista): login real con Supabase Auth,
+     incidencias compartidas entre todos los usuarios en la base de datos, cambios en tiempo real, y
+     clientes/albaranes/líneas leídos del ERP (tablas de Supabase).
+   · LOCAL (copia de demostración en Claude Artifact u otro host no listado): sin conexión a Supabase,
+     datos de ejemplo, todo se guarda solo en este navegador (como el prototipo original).
+   Para activar otro dominio (p. ej. uno propio de Almesa) basta con añadirlo a CLOUD_HOSTS. Con ?cloud=1 se
+   fuerza el modo CLOUD en cualquier host y con ?local=1 el modo LOCAL (pruebas). */
+var SUPABASE_URL = 'https://gmwilahhdqgvtaylkwmo.supabase.co';
+/* Clave PÚBLICA (publishable): está pensada para ir en la web. La protección de los datos la dan el login y las
+   políticas RLS de la base de datos. NUNCA pegar aquí la clave service_role / secret. */
+var SUPABASE_KEY = 'sb_publishable_WPO_VgWSVVlX8PS_cJi5Fg_a9liuKGR';
+var CLOUD_HOSTS = ['incidencias-almesa.altipesa.workers.dev', 'localhost', '127.0.0.1'];
+var CLOUD = (function(){
+  try{
+    var q = location.search || '';
+    if(/[?&]local=1/.test(q)) return false;
+    if(/[?&]cloud=1/.test(q)) return true;
+    return CLOUD_HOSTS.indexOf(location.hostname) >= 0 || /\.workers\.dev$/.test(location.hostname);
+  }catch(e){ return false; }
+})();
+</script>
+<!-- Solo se usa uno de los dos según el modo; el otro archivo puede no existir en el servidor (da un 404 inofensivo). -->
+<script src="supabase.min.js"></script>
+<script src="data-demo.js"></script>
+<script>
 /* ================= ESTADO GLOBAL ================= */
 let state = { usuario: '204' };
 let header = emptyHeader();
@@ -785,6 +811,8 @@ let ldFotosDefectoWorking = [];
 let ldFotosParteWorking = [];
 let ldPartesDanadasWorking = [];
 let editingId = null;
+let editingVersion = null; // CLOUD: versión de la incidencia cuando se abrió para editar (detecta cambios de otro usuario)
+let guardandoIncidencia = false;
 let lastConsultaList = [];
 let isDetailTab = false;
 /* Orden de la tabla de resultados de Consulta: por defecto por número de incidencia (ascendente,
@@ -797,6 +825,247 @@ const INC_STORAGE_KEY = 'almesa_inc_snapshot_v1';
    cascada, tabla de la acción, etc.) que solo hacen falta cuando se va a rellenar algo ahí: se
    mantienen colapsadas por defecto y cada una se despliega con su propio botón. */
 let seccionesColapsables = { datosComunes:false, accionRealizar:false };
+
+/* ================= DESCARGA DE ARCHIVOS (común) =================
+   Dentro de Claude (Artifact) se usa su capacidad "downloads"; en cualquier otro sitio (Cloudflare, etc.)
+   se descarga con un enlace normal del navegador. Devuelve un objeto con save({filename,data}). */
+async function obtenerDescargas(){
+  try{
+    if(window.claude && typeof window.claude.use === 'function'){
+      const d = await window.claude.use('downloads');
+      if(d) return d;
+    }
+  }catch(e){ /* seguimos con la descarga normal del navegador */ }
+  return { save: async ({filename, data}) => {
+    const blob = (data instanceof Blob) ? data : new Blob([data]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.style.display = 'none';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 2000);
+    return { status:'saved' };
+  } };
+}
+
+/* ================= CAPA SUPABASE (solo modo CLOUD) =================
+   Las incidencias se guardan en Supabase (tablas incidencias / incidencia_lineas / ...). La app mantiene en
+   memoria la misma forma de objeto de siempre; al guardar se envía completa a la función guardar_incidencia()
+   (transacción única, número asignado por el servidor) y al abrir se leen con listar_incidencias().
+   · persistIncidencias() detecta qué incidencias han cambiado (comparando con lo último sincronizado) y sube
+     solo esas, agrupando cambios seguidos (retardo de ~0,7 s).
+   · Cada incidencia lleva un número de versión: si dos personas editan a la vez, la segunda recibe un aviso en
+     vez de pisar el trabajo de la primera.
+   · Tiempo real: cualquier cambio en la tabla incidencias avisa a todos los navegadores abiertos, que recargan. */
+let sb = null;
+let sbUser = null;
+const nubeSync = new Map();      // nº incidencia -> { snap } (última forma sincronizada con el servidor)
+const nubePend = new Set();      // nº de incidencias con cambios pendientes de subir
+const nubeIntentos = new Map();
+let nubeTimer = null, nubeSubiendo = false, nubeRecargaPend = false, nubeReloadTimer = null, nubeCanal = null, nubeCargada = false;
+
+function nubeCliente(){
+  if(sb) return sb;
+  if(typeof supabase === 'undefined' || !supabase.createClient) return null;
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth:{ persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+  return sb;
+}
+function archivosRemotos(arr){ return (arr||[]).map(f=>({ name:f.name, size:f.size, path:f.path||null })); }
+function incARemoto(inc){
+  const lin = (inc.lineas||[]).filter(l=>!l.eliminada).map(l=>{
+    const o = Object.assign({}, l, { adjuntos: archivosRemotos(l.adjuntos) });
+    if(l.recepcion) o.recepcion = Object.assign({}, l.recepcion, { fotosDefecto: archivosRemotos(l.recepcion.fotosDefecto), fotosParte: archivosRemotos(l.recepcion.fotosParte) });
+    delete o.marcada;
+    return o;
+  });
+  const acciones = cloneAccionesRealizar(inc.accionesRealizar);
+  const datos = {
+    usuario: inc.usuario, fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion,
+    origenes: (inc.origenes||[]).slice(), cliente: inc.cliente, albaran: inc.albaran || null,
+    manualEnEspera: !!inc.manualEnEspera, estado: inc.estado, recogida: inc.recogida || null, recogidas: (inc.recogidas||[]).slice(),
+    cargoAgencia: inc.cargoAgencia || null, observaciones: inc.observaciones || '',
+    accionesRealizar: acciones, comunicacionCliente: archivosRemotos(inc.comunicacionCliente), documentos: archivosRemotos(inc.documentos),
+    historial: inc.historial || []
+  };
+  const alb = inc.albaran;
+  return {
+    fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion, estado: inc.estado,
+    cargoAgencia: inc.cargoAgencia || null, manualEnEspera: !!inc.manualEnEspera, observaciones: inc.observaciones || '',
+    cliente: { empresa: inc.cliente && inc.cliente.empresa != null ? inc.cliente.empresa : 1, cod: String(inc.cliente.cod) },
+    albaran: alb ? { empresa: alb.empresa, ejercicio: alb.ejercicio, serie: alb.serie, numero: alb.numero } : null,
+    datos, lineas: lin, accionesRealizar: acciones
+  };
+}
+function nubeSnap(inc){ return JSON.stringify(incARemoto(inc)); }
+
+function nombreSeguro(n){
+  const base = String(n||'archivo').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w.\-]+/g,'_');
+  return base.slice(-120) || 'archivo';
+}
+function coleccionarArchivos(inc){
+  const out = [];
+  [inc.comunicacionCliente, inc.documentos].forEach(a=> (a||[]).forEach(f=> out.push(f)));
+  (inc.lineas||[]).forEach(l=>{
+    (l.adjuntos||[]).forEach(f=> out.push(f));
+    const r = l.recepcion;
+    if(r){ (r.fotosDefecto||[]).forEach(f=> out.push(f)); (r.fotosParte||[]).forEach(f=> out.push(f)); }
+  });
+  return out;
+}
+async function subirAdjuntosInc(inc){
+  const pend = coleccionarArchivos(inc).filter(f=> f && f.file && !f.path);
+  for(const f of pend){
+    const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : uid('f');
+    const path = `${id}/${nombreSeguro(f.name)}`;
+    const r = await sb.storage.from('adjuntos').upload(path, f.file, { contentType: f.file.type || 'application/octet-stream', upsert:false });
+    if(r.error) throw new Error(`No se pudo subir el adjunto «${f.name}»: ${r.error.message}`);
+    f.path = path;
+  }
+}
+
+/* Guarda una incidencia ya existente (inc.id = nº, inc.version = versión conocida). Lanza error si falla. */
+async function nubeGuardar(inc){
+  await subirAdjuntosInc(inc);
+  const payload = incARemoto(inc);
+  const snap = JSON.stringify(payload);
+  payload.numero = Number.isInteger(inc.id) ? inc.id : null;
+  payload.version = Number.isInteger(inc.version) ? inc.version : null;
+  const r = await sb.rpc('guardar_incidencia', { p: payload });
+  if(r.error) throw r.error;
+  inc.id = r.data.numero; inc.version = r.data.version;
+  nubeSync.set(inc.id, { snap });
+  return r.data;
+}
+function nubeProgramarSubida(){
+  clearTimeout(nubeTimer);
+  nubeTimer = setTimeout(nubeSubirPendientes, 700);
+}
+function nubeDetectarCambios(){
+  if(!nubeCargada) return;
+  incidencias.forEach(inc=>{
+    const st = nubeSync.get(inc.id);
+    if(!st) return;                       // aún no existe en el servidor: lo crea guardarIncidencia()
+    if(st.snap !== nubeSnap(inc)) nubePend.add(inc.id);
+  });
+  if(nubePend.size) nubeProgramarSubida();
+}
+async function nubeSubirPendientes(){
+  if(nubeSubiendo) return;
+  nubeSubiendo = true;
+  try{
+    while(nubePend.size){
+      const id = nubePend.values().next().value;
+      nubePend.delete(id);
+      const inc = incidencias.find(i=>i.id===id);
+      if(!inc) continue;
+      try{ await nubeGuardar(inc); nubeIntentos.delete(id); }
+      catch(e){
+        const n = (nubeIntentos.get(id)||0) + 1; nubeIntentos.set(id, n);
+        const conflicto = nubeError(e, inc);
+        if(!conflicto && n < 3){ nubePend.add(id); await new Promise(r=>setTimeout(r, 4000)); }
+        else if(!conflicto){ nubeIntentos.delete(id); }
+      }
+    }
+  } finally { nubeSubiendo = false; }
+  if(nubeRecargaPend) nubeProgramarRecarga();
+}
+/* Devuelve true si el error era un conflicto de versión (ya se ha avisado y recargado). */
+function nubeError(e, inc){
+  const msg = String((e && e.message) || e || '');
+  if(msg.includes('CONFLICTO')){
+    toast(`La incidencia #${inc.id} la ha modificado otra persona a la vez. Se carga la versión guardada: repite tu cambio.`, 'error');
+    nubeRecargaPend = true; nubeProgramarRecarga();
+    return true;
+  }
+  if(msg.includes('NO_AUTH') || /JWT|token/i.test(msg)) toast('Tu sesión ha caducado. Sal y vuelve a entrar.', 'error');
+  else toast('No se ha podido guardar en la nube: ' + msg, 'error');
+  return false;
+}
+async function nubeCrear(rec){
+  await subirAdjuntosInc(rec);
+  const payload = incARemoto(rec);
+  payload.numero = null; payload.version = null;
+  const r = await sb.rpc('guardar_incidencia', { p: payload });
+  if(r.error) throw r.error;
+  rec.id = r.data.numero; rec.version = r.data.version;
+  nubeSync.set(rec.id, { snap: nubeSnap(rec) });
+}
+function normalizarIncRemota(inc){
+  inc.cliente = inc.cliente || { cod:'', nombre:'—', cif:'' };
+  ['comunicacionCliente','documentos','historial','accionesRealizar','lineas','origenes','recogidas'].forEach(k=>{ if(!Array.isArray(inc[k])) inc[k] = []; });
+  if(inc.manualEnEspera == null) inc.manualEnEspera = false;
+  inc.lineas.forEach(l=>{
+    if(!Array.isArray(l.adjuntos)) l.adjuntos = [];
+    if(l.recepcion){ if(!Array.isArray(l.recepcion.fotosDefecto)) l.recepcion.fotosDefecto = []; if(!Array.isArray(l.recepcion.fotosParte)) l.recepcion.fotosParte = []; if(!Array.isArray(l.recepcion.partesDanadas)) l.recepcion.partesDanadas = []; }
+  });
+  return inc;
+}
+async function nubeCargar(){
+  const r = await sb.rpc('listar_incidencias');
+  if(r.error){ toast('No se han podido cargar las incidencias de la nube: ' + r.error.message, 'error'); return false; }
+  const lista = (r.data || []).map(normalizarIncRemota).reverse();   // la más reciente primero, como antes
+  incidencias = lista;
+  nubeSync.clear();
+  lista.forEach(inc=> nubeSync.set(inc.id, { snap: nubeSnap(inc) }));
+  nextIncidenciaNum = lista.reduce((m,i)=> Math.max(m, i.id), 1000) + 1;   // solo orientativo para impresos aún sin guardar
+  nubeCargada = true;
+  return true;
+}
+function refrescarVistaActiva(){
+  const c = document.getElementById('view-consulta'), d = document.getElementById('view-dashboard');
+  if(c && c.classList.contains('active')) renderConsulta();
+  if(d && d.classList.contains('active')) renderDashboard();
+}
+function nubeProgramarRecarga(){
+  clearTimeout(nubeReloadTimer);
+  nubeReloadTimer = setTimeout(async ()=>{
+    if(nubeSubiendo || nubePend.size || guardandoIncidencia){ nubeRecargaPend = true; return; }
+    nubeRecargaPend = false;
+    if(await nubeCargar()) refrescarVistaActiva();
+  }, 700);
+}
+function nubeSuscribir(){
+  if(nubeCanal || !sb) return;
+  nubeCanal = sb.channel('incidencias-cambios')
+    .on('postgres_changes', { event:'*', schema:'public', table:'incidencias' }, ()=> nubeProgramarRecarga())
+    .subscribe();
+}
+function nubeDesuscribir(){
+  try{ if(nubeCanal && sb) sb.removeChannel(nubeCanal); }catch(e){}
+  nubeCanal = null;
+}
+async function nubeEntrar(session){
+  sbUser = session.user;
+  let perfil = null;
+  try{
+    const r = await sb.from('perfiles').select('nombre,codigo_corto').eq('user_id', sbUser.id).maybeSingle();
+    perfil = r.data;
+    if(!perfil){
+      const nombre = (sbUser.email||'').split('@')[0];
+      await sb.from('perfiles').insert({ user_id: sbUser.id, nombre });
+      perfil = { nombre };
+    }
+  }catch(e){ /* sin perfil seguimos con el correo */ }
+  state.usuario = (perfil && (perfil.codigo_corto || perfil.nombre)) || (sbUser.email||'').split('@')[0] || '—';
+  const ui = document.getElementById('usuarioInput');
+  if(ui){ ui.value = state.usuario; ui.readOnly = true; ui.maxLength = 40; ui.title = sbUser.email || ''; ui.style.width = Math.max(60, Math.min(160, state.usuario.length*9+24)) + 'px'; }
+  document.body.classList.add('app-auth');
+  await nubeCargar();
+  nubeSuscribir();
+  renderAll();
+  refrescarVistaActiva();
+  const incParam = new URLSearchParams(location.search).get('incidencia');
+  if(incParam){ isDetailTab = true; abrirDetalleIncidencia(Number(incParam)); }
+}
+async function nubeSalir(){
+  nubeDesuscribir();
+  clearTimeout(nubeTimer); clearTimeout(nubeReloadTimer);
+  nubePend.clear(); nubeSync.clear(); nubeCargada = false; incidencias = [];
+  try{ await sb.auth.signOut(); }catch(e){}
+  sbUser = null;
+}
+window.addEventListener('beforeunload', e=>{
+  if(CLOUD && (nubePend.size || nubeSubiendo)){ e.preventDefault(); e.returnValue = ''; }
+});
 
 /* ================= LOGIN ================= */
 /* Pantalla de acceso: valida usuario/contraseña contra APP_DATA.usuarios (hoja "usuarios" del Excel
@@ -825,14 +1094,33 @@ function usuarioValido(usuario, contrasena){
   const lista = (APP_DATA && APP_DATA.usuarios) || [];
   return lista.some(x => String(x.usuario||'').trim().toLowerCase()===u && String(x.contrasena||'').trim()===p);
 }
-function intentarLogin(ev){
+async function intentarLogin(ev){
   if(ev) ev.preventDefault();
   const usuarioInput = document.getElementById('loginUsuario');
   const contrasenaInput = document.getElementById('loginContrasena');
   const errBox = document.getElementById('loginError');
   const usuario = usuarioInput.value, contrasena = contrasenaInput.value;
   if(!usuario.trim() || !contrasena.trim()){
-    errBox.textContent = 'Indica usuario y contraseña.';
+    errBox.textContent = CLOUD ? 'Indica tu correo y contraseña.' : 'Indica usuario y contraseña.';
+    return false;
+  }
+  if(CLOUD){
+    if(!nubeCliente()){ errBox.textContent = 'No se ha podido cargar el componente de conexión. Recarga la página.'; return false; }
+    errBox.textContent = 'Entrando…';
+    try{
+      const r = await sb.auth.signInWithPassword({ email: usuario.trim(), password: contrasena });
+      if(r.error || !r.data || !r.data.session){
+        const m = String((r.error && r.error.message) || '');
+        errBox.textContent = /invalid login/i.test(m) ? 'Correo o contraseña incorrectos.' : (/fetch|network|failed/i.test(m) ? 'No se ha podido conectar con el servidor. Revisa la conexión e inténtalo de nuevo.' : ('No se ha podido entrar: ' + (m || 'error desconocido')));
+        contrasenaInput.value = ''; contrasenaInput.focus();
+        return false;
+      }
+      errBox.textContent = '';
+      contrasenaInput.value = '';
+      await nubeEntrar(r.data.session);
+    }catch(e){
+      errBox.textContent = 'No se ha podido conectar con el servidor. Revisa la conexión e inténtalo de nuevo.';
+    }
     return false;
   }
   if(usuarioValido(usuario, contrasena)){
@@ -848,6 +1136,7 @@ function intentarLogin(ev){
 }
 function cerrarSesion(){
   try{ sessionStorage.removeItem(LOGIN_SESSION_KEY); }catch(e){}
+  if(CLOUD) nubeSalir();
   document.body.classList.remove('app-auth');
   const u = document.getElementById('loginUsuario'); if(u) u.value = '';
   const p = document.getElementById('loginContrasena'); if(p){ p.value = ''; p.type = 'password'; }
@@ -864,7 +1153,7 @@ function comprobarSesionGuardada(){
     if(sigueValido) document.body.classList.add('app-auth');
   }
 }
-comprobarSesionGuardada();
+if(!CLOUD) comprobarSesionGuardada();
 
 function emptyHeader(){
   return { fechaApertura: todayISO(), fechaComunicacion:'', cliente:null, albaran:null,
@@ -1314,7 +1603,7 @@ function renderClienteField(){
   const box = document.getElementById('clienteFieldBox');
   if(header.cliente){
     box.innerHTML = `<div class="selected-chip">
-      <div><div class="name">${escapeHtml(header.cliente.nombre)}</div><div class="sub">Cód. ${header.cliente.cod} · CIF ${escapeHtml(header.cliente.cif||'—')}</div></div>
+      <div><div class="name">${escapeHtml(header.cliente.nombre)}</div><div class="sub">${clienteSubLinea(header.cliente)}</div></div>
       <button title="Quitar cliente">✕</button></div>`;
     box.querySelector('button').addEventListener('click', clearCliente);
   } else {
@@ -1354,60 +1643,143 @@ function clearAlbaran(){
   });
 }
 
-function renderClienteResults(q){
-  const results = document.getElementById('clienteResults');
-  q = (q||'').trim().toLowerCase();
-  let list = APP_DATA.clientes;
-  if(q) list = list.filter(c => c.nombre.toLowerCase().includes(q) || (c.cif||'').toLowerCase().includes(q) || String(c.cod).includes(q));
-  const shown = list.slice(0,80);
-  if(!shown.length){ results.innerHTML = '<div class="empty-state">Sin resultados para “'+escapeHtml(q)+'”</div>'; return; }
-  results.innerHTML = shown.map(c => `<div class="search-row" data-cod="${c.cod}">
-      <div><div class="name">${escapeHtml(c.nombre)}</div><div class="sub">CIF ${escapeHtml(c.cif||'—')}</div></div>
-      <div class="meta">Cód. ${c.cod}</div></div>`).join('')
-    + (list.length>80 ? `<div class="empty-state">Mostrando 80 de ${list.length} resultados. Afina la búsqueda.</div>` : '');
-  results.querySelectorAll('[data-cod]').forEach(row => row.addEventListener('click', ()=> selectCliente(Number(row.dataset.cod))));
+/* ---- Capa de acceso a datos maestros (clientes, albaranes, líneas, artículos) ----
+   CLOUD: se consultan en Supabase (tablas del ERP) con búsquedas en el servidor; el navegador no descarga las tablas.
+   LOCAL: se leen de data-demo.js (copia de demostración). Las dos devuelven la misma forma de objetos. */
+const _deb = {};
+function conDebounce(k, fn){
+  if(!CLOUD){ fn(); return; }
+  clearTimeout(_deb[k]); _deb[k] = setTimeout(fn, 250);
 }
-function selectCliente(cod){
-  const c = APP_DATA.clientes.find(x=>x.cod===cod);
+function albaranEtiqueta(a){ return a.serie ? `${a.serie}/${a.numero}` : String(a.numAlbaran); }
+function clienteSubLinea(c){
+  if(!c) return '';
+  return CLOUD ? `Cód. ${escapeHtml(String(c.cod))}${c.empresa!=null?` · Emp. ${c.empresa}`:''}${c.ubicacion?` · ${escapeHtml(c.ubicacion)}`:''}`
+               : `Cód. ${escapeHtml(String(c.cod))} · CIF ${escapeHtml(c.cif||'—')}`;
+}
+async function dsBuscarClientes(q){
+  q = (q||'').trim();
+  if(!CLOUD){
+    const ql = q.toLowerCase();
+    let list = APP_DATA.clientes;
+    if(ql) list = list.filter(c => c.nombre.toLowerCase().includes(ql) || (c.cif||'').toLowerCase().includes(ql) || String(c.cod).includes(ql));
+    return { lista: list.slice(0,80), total: list.length };
+  }
+  const r = await sb.rpc('buscar_clientes', { q, lim: 80 });
+  if(r.error) throw r.error;
+  const lista = (r.data||[]).map(c=>({ empresa:c.empresa, cod:String(c.cod), nombre:c.nombre||'(sin nombre)', cif:'', ubicacion:[c.municipio,c.provincia].filter(Boolean).join(' · ') }));
+  return { lista, total: lista.length };
+}
+async function dsBuscarAlbaranes(q){
+  q = (q||'').trim();
+  if(!CLOUD){
+    const ql = q.toLowerCase();
+    let base = header.cliente ? APP_DATA.albaranesHeader.filter(a => a.codCliente===header.cliente.cod) : APP_DATA.albaranesHeader;
+    let list;
+    if(ql){
+      list = [];
+      base.forEach(a=>{
+        const numMatch = String(a.numAlbaran).includes(ql);
+        const clienteMatch = a.cliente.toLowerCase().includes(ql);
+        let articuloMatch = null;
+        if(!numMatch && !clienteMatch){
+          const lineasArt = APP_DATA.lineasPorAlbaran[a.key] || [];
+          articuloMatch = lineasArt.find(r => String(r.codArticulo).toLowerCase().includes(ql) || (r.descripcion||'').toLowerCase().includes(ql)) || null;
+        }
+        if(numMatch || clienteMatch || articuloMatch) list.push(Object.assign({}, a, { _articuloMatch: articuloMatch }));
+      });
+    } else { list = base; }
+    list = list.slice().sort((a,b)=> b.fecha.localeCompare(a.fecha));
+    return { lista: list.slice(0,80), total: list.length };
+  }
+  const r = await sb.rpc('buscar_albaranes', { q, p_empresa: header.cliente ? (header.cliente.empresa ?? null) : null, p_cliente: header.cliente ? String(header.cliente.cod) : null, lim: 80 });
+  if(r.error) throw r.error;
+  const ql = q.toLowerCase();
+  const lista = (r.data||[]).map(x=>{
+    const a = { key:`${x.empresa}-${x.ejercicio}-${x.serie}-${x.numero}`, empresa:x.empresa, ejercicio:x.ejercicio, serie:x.serie, numero:x.numero,
+      numAlbaran:`${x.serie}/${x.numero}`, numFactura:x.numfactura, fecha:x.fecha, codCliente:String(x.codcliente), cliente:x.cliente||'' };
+    // Solo se ofrece "cargar solo esta referencia" si la búsqueda NO coincide con el nº de albarán ni con el cliente.
+    const porNumeroOCliente = ql && (a.numAlbaran.toLowerCase().includes(ql) || String(x.numero).includes(ql) || a.cliente.toLowerCase().includes(ql));
+    a._articuloMatch = (ql && !porNumeroOCliente && x.articulo_cod) ? { codArticulo:x.articulo_cod, descripcion:x.articulo_desc||'' } : null;
+    return a;
+  });
+  return { lista, total: lista.length };
+}
+async function dsLineasAlbaran(a){
+  if(!CLOUD) return APP_DATA.lineasPorAlbaran[a.key] || [];
+  const r = await sb.rpc('lineas_albaran', { p_empresa:a.empresa, p_ejercicio:a.ejercicio, p_serie:a.serie, p_numero:a.numero });
+  if(r.error) throw r.error;
+  return (r.data||[]).map(x=>({ codArticulo:x.codarticulo, descripcion:x.descripcion, unidades:Number(x.unidades)||0, precioUnitario:Number(x.preciounitario)||0, baseImponible:Number(x.baseimponible)||0 }));
+}
+async function dsBuscarArticulos(q){
+  q = (q||'').trim();
+  if(!CLOUD){
+    const ql = q.toLowerCase();
+    let list = APP_DATA.catalogoArticulos || [];
+    if(ql) list = list.filter(a => (a.descripcion||'').toLowerCase().includes(ql) || String(a.codArticulo).toLowerCase().includes(ql));
+    return { lista: list.slice(0,80), total: list.length };
+  }
+  const r = await sb.rpc('buscar_articulos', { q, lim: 80 });
+  if(r.error) throw r.error;
+  const lista = (r.data||[]).map(x=>({ codArticulo:x.codarticulo, descripcion:x.descripcion, precioUnitario:x.preciounitario==null?null:Number(x.preciounitario), ultimaFecha:x.ultimafecha }));
+  return { lista, total: lista.length };
+}
+
+let _cliLista = [], _cliReq = 0;
+function renderClienteResults(q){ conDebounce('cli', ()=> _renderClienteResults(q)); }
+async function _renderClienteResults(q){
+  const results = document.getElementById('clienteResults');
+  const my = ++_cliReq;
+  if(CLOUD) results.innerHTML = '<div class="empty-state">Buscando…</div>';
+  let res;
+  try{ res = await dsBuscarClientes(q); }
+  catch(e){ if(my===_cliReq) results.innerHTML = '<div class="empty-state">No se ha podido consultar la base de datos. Revisa la conexión e inténtalo de nuevo.</div>'; return; }
+  if(my!==_cliReq) return;
+  _cliLista = res.lista;
+  if(!_cliLista.length){ results.innerHTML = '<div class="empty-state">Sin resultados para “'+escapeHtml((q||'').trim())+'”</div>'; return; }
+  results.innerHTML = _cliLista.map((c,i) => `<div class="search-row" data-i="${i}">
+      <div><div class="name">${escapeHtml(c.nombre)}</div><div class="sub">${clienteSubLinea(c)}</div></div>
+      <div class="meta">Cód. ${escapeHtml(String(c.cod))}</div></div>`).join('')
+    + (res.total>80 || (CLOUD && _cliLista.length>=80) ? `<div class="empty-state">Mostrando los primeros 80 resultados. Afina la búsqueda.</div>` : '');
+  results.querySelectorAll('[data-i]').forEach(row => row.addEventListener('click', ()=> selectCliente(_cliLista[Number(row.dataset.i)])));
+}
+function selectCliente(c){
+  if(!c) return;
   header.cliente = c; renderClienteField(); closeModal('modalCliente');
 }
 
-function renderAlbaranResults(q){
+let _albLista = [], _albReq = 0;
+function renderAlbaranResults(q){ conDebounce('alb', ()=> _renderAlbaranResults(q)); }
+async function _renderAlbaranResults(q){
   const results = document.getElementById('albaranResults');
-  q = (q||'').trim().toLowerCase();
-  // Si ya hay un cliente seleccionado, la búsqueda de albarán (por nº, o por artículo) se limita a sus albaranes.
-  let base = header.cliente ? APP_DATA.albaranesHeader.filter(a => a.codCliente===header.cliente.cod) : APP_DATA.albaranesHeader;
-  let list;
-  if(q){
-    list = [];
-    base.forEach(a=>{
-      const numMatch = String(a.numAlbaran).includes(q);
-      const clienteMatch = a.cliente.toLowerCase().includes(q);
-      let articuloMatch = null;
-      if(!numMatch && !clienteMatch){
-        const lineasArt = APP_DATA.lineasPorAlbaran[a.key] || [];
-        articuloMatch = lineasArt.find(r => String(r.codArticulo).toLowerCase().includes(q) || (r.descripcion||'').toLowerCase().includes(q)) || null;
-      }
-      if(numMatch || clienteMatch || articuloMatch) list.push(Object.assign({}, a, { _articuloMatch: articuloMatch }));
-    });
-  } else {
-    list = base;
-  }
-  list = list.slice().sort((a,b)=> b.fecha.localeCompare(a.fecha));
-  const shown = list.slice(0,80);
-  if(!shown.length){ results.innerHTML = '<div class="empty-state">Sin resultados' + (header.cliente ? ` para «${escapeHtml(header.cliente.nombre)}»` : '') + '</div>'; return; }
-  results.innerHTML = shown.map(a => `<div class="search-row" data-key="${a.key}" ${a._articuloMatch?`data-articulo="${escapeHtml(String(a._articuloMatch.codArticulo))}"`:''}>
-      <div><div class="name">Albarán ${a.numAlbaran}</div><div class="sub">${escapeHtml(a.cliente)}${a._articuloMatch?` · 📦 ${escapeHtml(String(a._articuloMatch.codArticulo))} — ${escapeHtml(a._articuloMatch.descripcion||'')} <span class="mod-log">(se cargará solo esta referencia)</span>`:''}</div></div>
-      <div class="meta">${fmtDate(a.fecha)}<br>Fra. ${a.numFactura}</div></div>`).join('')
-    + (list.length>80 ? `<div class="empty-state">Mostrando 80 de ${list.length} resultados. Afina la búsqueda.</div>` : '');
-  results.querySelectorAll('[data-key]').forEach(row => row.addEventListener('click', ()=> selectAlbaran(row.dataset.key, row.dataset.articulo || null)));
+  const my = ++_albReq;
+  if(CLOUD) results.innerHTML = '<div class="empty-state">Buscando…</div>';
+  let res;
+  try{ res = await dsBuscarAlbaranes(q); }
+  catch(e){ if(my===_albReq) results.innerHTML = '<div class="empty-state">No se ha podido consultar la base de datos. Revisa la conexión e inténtalo de nuevo.</div>'; return; }
+  if(my!==_albReq) return;
+  _albLista = res.lista;
+  if(!_albLista.length){ results.innerHTML = '<div class="empty-state">Sin resultados' + (header.cliente ? ` para «${escapeHtml(header.cliente.nombre)}»` : '') + '</div>'; return; }
+  results.innerHTML = _albLista.map((a,i) => `<div class="search-row" data-i="${i}">
+      <div><div class="name">Albarán ${escapeHtml(String(a.numAlbaran))}</div><div class="sub">${escapeHtml(a.cliente)}${a._articuloMatch?` · 📦 ${escapeHtml(String(a._articuloMatch.codArticulo))} — ${escapeHtml(a._articuloMatch.descripcion||'')} <span class="mod-log">(se cargará solo esta referencia)</span>`:''}</div></div>
+      <div class="meta">${fmtDate(a.fecha)}<br>Fra. ${a.numFactura ?? '—'}</div></div>`).join('')
+    + (res.total>80 || (CLOUD && _albLista.length>=80) ? `<div class="empty-state">Mostrando los primeros 80 resultados. Afina la búsqueda.</div>` : '');
+  results.querySelectorAll('[data-i]').forEach(row => {
+    const a = _albLista[Number(row.dataset.i)];
+    row.addEventListener('click', ()=> selectAlbaran(a, a._articuloMatch ? String(a._articuloMatch.codArticulo) : null));
+  });
 }
-function selectAlbaran(key, soloArticuloCod){
-  const a = APP_DATA.albaranesHeader.find(x=>x.key===key);
+async function selectAlbaran(a, soloArticuloCod){
   if(!a) return;
-  header.albaran = a;
-  if(!header.cliente || header.cliente.cod !== a.codCliente){ header.cliente = {cod:a.codCliente, nombre:a.cliente, cif:a.cif}; }
-  loadLineasFromAlbaran(a.key, soloArticuloCod || null);
+  let raw;
+  try{ raw = await dsLineasAlbaran(a); }
+  catch(e){ toast('No se han podido cargar las líneas del albarán. Revisa la conexión e inténtalo de nuevo.', 'error'); return; }
+  const alb = Object.assign({}, a); delete alb._articuloMatch;
+  header.albaran = alb;
+  if(!header.cliente || String(header.cliente.cod) !== String(a.codCliente) || (a.empresa!=null && header.cliente.empresa!=null && header.cliente.empresa!==a.empresa)){
+    header.cliente = { empresa:a.empresa, cod:a.codCliente, nombre:a.cliente, cif:a.cif||'' };
+  }
+  lineas = mergeLineasRaw(raw, soloArticuloCod || null).map(makeLinea);
   closeModal('modalAlbaran');
   renderAll();
   if(soloArticuloCod){
@@ -1427,8 +1799,9 @@ function makeLinea(r){
     motivoPrecio:'', submotivoPrecio:'', casoPrecio:'', accion:null, recogida:null, cargoAgencia:null, adjuntos:[], observaciones:'', lastMod:null, manual:false,
     recepcion: { tieneDano:null, partesDanadas:[], tiempoReparacionMin:null, costeMod:null, peso:null, constanteLot:CONSTANTE_LOTT_DEFECTO, importeLott:null, importePctDescuento:null, metodoElegido:null, importeAgencia:null, fotosDefecto:[], fotosParte:[] } };
 }
-function loadLineasFromAlbaran(key, soloArticuloCod){
-  let raw = APP_DATA.lineasPorAlbaran[key] || [];
+/* Agrupa por artículo las líneas "en bruto" del albarán (la misma referencia puede venir repetida). */
+function mergeLineasRaw(raw, soloArticuloCod){
+  raw = raw || [];
   if(soloArticuloCod){ raw = raw.filter(r => String(r.codArticulo)===String(soloArticuloCod)); }
   const merged = {};
   raw.forEach(r=>{
@@ -1440,11 +1813,13 @@ function loadLineasFromAlbaran(key, soloArticuloCod){
       m.precioUnitario = totalUnidades ? +(totalBase/totalUnidades).toFixed(4) : m.precioUnitario;
     } else { merged[r.codArticulo] = Object.assign({}, r); }
   });
-  lineas = Object.values(merged).map(makeLinea);
+  return Object.values(merged);
 }
 
-/* ================= CATÁLOGO DE ARTÍCULOS (todos los albaranes) — para líneas manuales ================= */
+/* ================= CATÁLOGO DE ARTÍCULOS — para líneas manuales =================
+   LOCAL: se construye a partir de todos los albaranes de data-demo.js. CLOUD: se busca en Supabase. */
 function buildCatalogoArticulos(){
+  if(CLOUD) return;
   const headers = (APP_DATA.albaranesHeader||[]).slice().sort((a,b)=> a.fecha.localeCompare(b.fecha));
   const map = new Map();
   headers.forEach(h=>{
@@ -1468,21 +1843,25 @@ function abrirModalArticuloManual(){
   openModal('modalArticuloManual');
   setTimeout(()=> document.getElementById('amSearchInput').focus(), 40);
 }
-function renderArticuloManualResults(q){
+let _artLista = [], _artReq = 0;
+function renderArticuloManualResults(q){ conDebounce('art', ()=> _renderArticuloManualResults(q)); }
+async function _renderArticuloManualResults(q){
   const results = document.getElementById('amResults');
-  q = (q||'').trim().toLowerCase();
-  let list = APP_DATA.catalogoArticulos || [];
-  if(q) list = list.filter(a => (a.descripcion||'').toLowerCase().includes(q) || String(a.codArticulo).toLowerCase().includes(q));
-  const shown = list.slice(0,80);
-  if(!shown.length){ results.innerHTML = '<div class="empty-state">Sin resultados para “'+escapeHtml(q)+'”</div>'; return; }
-  results.innerHTML = shown.map(a => `<div class="search-row" data-cod="${escapeHtml(String(a.codArticulo))}">
+  const my = ++_artReq;
+  if(CLOUD) results.innerHTML = '<div class="empty-state">Buscando…</div>';
+  let res;
+  try{ res = await dsBuscarArticulos(q); }
+  catch(e){ if(my===_artReq) results.innerHTML = '<div class="empty-state">No se ha podido consultar la base de datos. Revisa la conexión e inténtalo de nuevo.</div>'; return; }
+  if(my!==_artReq) return;
+  _artLista = res.lista;
+  if(!_artLista.length){ results.innerHTML = '<div class="empty-state">Sin resultados para “'+escapeHtml((q||'').trim())+'”</div>'; return; }
+  results.innerHTML = _artLista.map((a,i) => `<div class="search-row" data-i="${i}">
       <div><div class="name">${escapeHtml(a.descripcion||'(sin descripción)')}</div><div class="sub mono">Cód. ${escapeHtml(String(a.codArticulo))}</div></div>
       <div class="meta">Últ. precio<br>${fmtMoney(a.precioUnitario)}</div></div>`).join('')
-    + (list.length>80 ? `<div class="empty-state">Mostrando 80 de ${list.length} resultados. Afina la búsqueda.</div>` : '');
-  results.querySelectorAll('[data-cod]').forEach(row => row.addEventListener('click', ()=> seleccionarArticuloManual(row.dataset.cod)));
+    + (res.total>80 || (CLOUD && _artLista.length>=80) ? `<div class="empty-state">Mostrando los primeros 80 resultados. Afina la búsqueda.</div>` : '');
+  results.querySelectorAll('[data-i]').forEach(row => row.addEventListener('click', ()=> seleccionarArticuloManual(_artLista[Number(row.dataset.i)])));
 }
-function seleccionarArticuloManual(cod){
-  const a = (APP_DATA.catalogoArticulos||[]).find(x=> String(x.codArticulo)===String(cod));
+function seleccionarArticuloManual(a){
   if(!a) return;
   amSelectedArticulo = a;
   document.getElementById('amSelCodigo').textContent = 'Cód. ' + a.codArticulo;
@@ -1529,29 +1908,19 @@ function confirmarLineaManual(){
 }
 
 /* ================= AÑADIR OTRA REFERENCIA DEL ALBARÁN (recuperar una línea eliminada por error) ===== */
-function abrirModalRefAlbaran(){
+let _refRaw = [];
+async function abrirModalRefAlbaran(){
   if(!header.albaran) return;
   document.getElementById('refAlbaranNum').textContent = header.albaran.numAlbaran;
+  try{ _refRaw = await dsLineasAlbaran(header.albaran); }
+  catch(e){ toast('No se han podido consultar las líneas del albarán. Revisa la conexión.', 'error'); return; }
   renderRefAlbaranResults();
   openModal('modalRefAlbaran');
 }
 function refAlbaranDisponibles(){
-  const raw = APP_DATA.lineasPorAlbaran[header.albaran.key] || [];
   const yaPresentes = new Set(lineas.map(l=>String(l.codArticulo)));
-  // Mismo criterio de agrupación por artículo que al cargar el albarán la primera vez
-  // (loadLineasFromAlbaran), por si la misma referencia aparece repetida en varias líneas.
-  const merged = {};
-  raw.forEach(r=>{
-    if(yaPresentes.has(String(r.codArticulo))) return;
-    if(merged[r.codArticulo]){
-      const m = merged[r.codArticulo];
-      const totalUnidades = m.unidades + r.unidades;
-      const totalBase = m.baseImponible + r.baseImponible;
-      m.unidades = totalUnidades; m.baseImponible = totalBase;
-      m.precioUnitario = totalUnidades ? +(totalBase/totalUnidades).toFixed(4) : m.precioUnitario;
-    } else { merged[r.codArticulo] = Object.assign({}, r); }
-  });
-  return Object.values(merged);
+  // Mismo criterio de agrupación por artículo que al cargar el albarán la primera vez (mergeLineasRaw).
+  return mergeLineasRaw((_refRaw||[]).filter(r=> !yaPresentes.has(String(r.codArticulo))), null);
 }
 function renderRefAlbaranResults(){
   const results = document.getElementById('refAlbaranResults');
@@ -2244,7 +2613,7 @@ function wireLineaModalEvents(l){
 function renderLdFilelist(){
   const box = document.getElementById('ld_filelist');
   if(!ldAdjuntosWorking.length){ box.innerHTML=''; return; }
-  box.innerHTML = ldAdjuntosWorking.map((f,i)=>`<div class="fileitem"><span>📄</span><span class="fname">${escapeHtml(f.name)}</span><span class="mod-log">${fmtSize(f.size)}</span><button class="dl" data-dl="${i}" title="${f.file?'Descargar':'Ejemplo sin archivo real'}" ${f.file?'':'disabled'}>⬇</button><button data-rm="${i}" title="Quitar">✕</button></div>`).join('');
+  box.innerHTML = ldAdjuntosWorking.map((f,i)=>`<div class="fileitem"><span>📄</span><span class="fname">${escapeHtml(f.name)}</span><span class="mod-log">${fmtSize(f.size)}</span><button class="dl" data-dl="${i}" title="${(f.file||f.path)?'Descargar':'Solo consta el nombre del archivo (sin contenido guardado)'}" ${(f.file||f.path)?'':'disabled'}>⬇</button><button data-rm="${i}" title="Quitar">✕</button></div>`).join('');
   box.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', ()=> descargarArchivo(ldAdjuntosWorking[Number(b.dataset.dl)])));
   box.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', ()=>{ ldAdjuntosWorking.splice(Number(b.dataset.rm),1); renderLdFilelist(); }));
 }
@@ -2252,7 +2621,7 @@ function renderLdFotosDefecto(){
   const box = document.getElementById('ld_filelistDefecto');
   if(!box) return;
   if(!ldFotosDefectoWorking.length){ box.innerHTML=''; return; }
-  box.innerHTML = ldFotosDefectoWorking.map((f,i)=>`<div class="fileitem"><span>📷</span><span class="fname">${escapeHtml(f.name)}</span><span class="mod-log">${fmtSize(f.size)}</span><button class="dl" data-dl="${i}" title="${f.file?'Descargar':'Ejemplo sin archivo real'}" ${f.file?'':'disabled'}>⬇</button><button data-rm="${i}" title="Quitar">✕</button></div>`).join('');
+  box.innerHTML = ldFotosDefectoWorking.map((f,i)=>`<div class="fileitem"><span>📷</span><span class="fname">${escapeHtml(f.name)}</span><span class="mod-log">${fmtSize(f.size)}</span><button class="dl" data-dl="${i}" title="${(f.file||f.path)?'Descargar':'Solo consta el nombre del archivo (sin contenido guardado)'}" ${(f.file||f.path)?'':'disabled'}>⬇</button><button data-rm="${i}" title="Quitar">✕</button></div>`).join('');
   box.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', ()=> descargarArchivo(ldFotosDefectoWorking[Number(b.dataset.dl)])));
   box.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', ()=>{ ldFotosDefectoWorking.splice(Number(b.dataset.rm),1); renderLdFotosDefecto(); }));
 }
@@ -2260,7 +2629,7 @@ function renderLdFotosParte(){
   const box = document.getElementById('ld_filelistParte');
   if(!box) return;
   if(!ldFotosParteWorking.length){ box.innerHTML=''; return; }
-  box.innerHTML = ldFotosParteWorking.map((f,i)=>`<div class="fileitem"><span>📷</span><span class="fname">${escapeHtml(f.name)}</span><span class="mod-log">${fmtSize(f.size)}</span><button class="dl" data-dl="${i}" title="${f.file?'Descargar':'Ejemplo sin archivo real'}" ${f.file?'':'disabled'}>⬇</button><button data-rm="${i}" title="Quitar">✕</button></div>`).join('');
+  box.innerHTML = ldFotosParteWorking.map((f,i)=>`<div class="fileitem"><span>📷</span><span class="fname">${escapeHtml(f.name)}</span><span class="mod-log">${fmtSize(f.size)}</span><button class="dl" data-dl="${i}" title="${(f.file||f.path)?'Descargar':'Solo consta el nombre del archivo (sin contenido guardado)'}" ${(f.file||f.path)?'':'disabled'}>⬇</button><button data-rm="${i}" title="Quitar">✕</button></div>`).join('');
   box.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', ()=> descargarArchivo(ldFotosParteWorking[Number(b.dataset.dl)])));
   box.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', ()=>{ ldFotosParteWorking.splice(Number(b.dataset.rm),1); renderLdFotosParte(); }));
 }
@@ -2463,7 +2832,7 @@ function renderFileList(key, domId){
   const arr = header[key];
   const box = document.getElementById(domId);
   if(!arr.length){ box.innerHTML=''; return; }
-  box.innerHTML = arr.map((f,i)=>`<div class="fileitem"><span>📄</span><span class="fname">${escapeHtml(f.name)}</span><span class="mod-log">${fmtSize(f.size)}</span><button class="dl" data-dlf="${i}" title="${f.file?'Descargar':'Ejemplo sin archivo real'}" ${f.file?'':'disabled'}>⬇</button><button data-rmf="${i}" title="Quitar">✕</button></div>`).join('');
+  box.innerHTML = arr.map((f,i)=>`<div class="fileitem"><span>📄</span><span class="fname">${escapeHtml(f.name)}</span><span class="mod-log">${fmtSize(f.size)}</span><button class="dl" data-dlf="${i}" title="${(f.file||f.path)?'Descargar':'Solo consta el nombre del archivo (sin contenido guardado)'}" ${(f.file||f.path)?'':'disabled'}>⬇</button><button data-rmf="${i}" title="Quitar">✕</button></div>`).join('');
   box.querySelectorAll('[data-dlf]').forEach(b => b.addEventListener('click', ()=> descargarArchivo(arr[Number(b.dataset.dlf)])));
   box.querySelectorAll('[data-rmf]').forEach(b => b.addEventListener('click', ()=>{ arr.splice(Number(b.dataset.rmf),1); renderFileList(key, domId); }));
 }
@@ -2471,12 +2840,19 @@ function renderFileList(key, domId){
 /* ================= DESCARGA DE ARCHIVOS (cabecera y líneas) ================= */
 async function descargarArchivo(fileObj){
   if(!fileObj) return;
-  if(!fileObj.file){ toast('Este archivo es de ejemplo y no tiene contenido real que descargar.', 'error'); return; }
-  if(!window.claude || typeof window.claude.use !== 'function'){ toast('La descarga no está disponible en esta vista.', 'error'); return; }
-  const downloads = await window.claude.use('downloads');
-  if(!downloads){ toast('La descarga no está disponible en esta vista.', 'error'); return; }
+  let data = fileObj.file;
+  if(!data && fileObj.path && CLOUD && sb){
+    // Adjunto guardado en Supabase Storage: se baja bajo demanda con la sesión del usuario.
+    try{
+      const r = await sb.storage.from('adjuntos').download(fileObj.path);
+      if(r.error || !r.data) throw (r.error || new Error('vacío'));
+      data = r.data;
+    }catch(e){ toast('No se ha podido descargar el archivo de la nube.', 'error'); return; }
+  }
+  if(!data){ toast(CLOUD ? 'De este archivo solo consta el nombre: no se guardó su contenido.' : 'Este archivo es de ejemplo y no tiene contenido real que descargar.', 'error'); return; }
+  const downloads = await obtenerDescargas();
   try{
-    const res = await downloads.save({ filename: fileObj.name, data: fileObj.file });
+    const res = await downloads.save({ filename: fileObj.name, data });
     if(res && res.status==='saved') toast(`"${fileObj.name}" descargado.`);
   } catch(err){
     if(!err || err.code!=='declined'){ toast('No se ha podido descargar el archivo.', 'error'); }
@@ -2485,6 +2861,7 @@ async function descargarArchivo(fileObj){
 
 /* ================= PESTAÑA INDEPENDIENTE (ver incidencia) ================= */
 function persistIncidencias(){
+  if(CLOUD){ nubeDetectarCambios(); return; }
   try{
     const snap = incidencias.map(inc => ({
       id: inc.id, usuario: inc.usuario, fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion,
@@ -2597,34 +2974,50 @@ function focusInvalid(fieldId){
   if(typeof el.focus === 'function') el.focus();
   setTimeout(()=> el.classList.remove('invalid'), 2600);
 }
-function guardarIncidencia(){
+async function guardarIncidencia(){
+  if(guardandoIncidencia) return;
   const errors = validarCabecera();
   if(errors.length){ toast(errors[0].msg, 'error'); focusInvalid(errors[0].fieldId); return; }
   const activas = lineas.filter(l=>!l.eliminada);
+  guardandoIncidencia = true;
+  const btnGuardar = document.querySelector('[onclick="guardarIncidencia()"]');
+  if(btnGuardar && CLOUD) btnGuardar.disabled = true;
+  try{
 
   if(editingId!=null){
     const inc = incidencias.find(i=>i.id===editingId);
     if(!inc){ toast('No se encontró la incidencia a actualizar.', 'error'); editingId=null; return; }
+    if(CLOUD && editingVersion!=null && inc.version!==editingVersion){
+      toast(`La incidencia #${inc.id} ha sido modificada por otra persona mientras la editabas. Para no pisar su trabajo, cancela la edición y ábrela de nuevo.`, 'error');
+      return;
+    }
     const beforeInc = JSON.parse(JSON.stringify(inc));
-    inc.fechaComunicacion = header.fechaComunicacion;
-    inc.cliente = Object.assign({}, header.cliente);
-    inc.albaran = header.albaran ? Object.assign({}, header.albaran) : null;
-    inc.manualEnEspera = header.manualEnEspera;
-    inc.comunicacionCliente = header.comunicacionCliente.slice();
-    inc.documentos = header.documentos.slice();
-    inc.observaciones = header.observaciones || '';
-    inc.lineas = activas.map(l=> Object.assign({}, l, {marcada:false}));
-    inc.estado = computeHeaderEstado(activas, header.manualEnEspera);
-    inc.recogida = computeHeaderRecogida(activas);
-    inc.recogidas = recogidasDistintas(activas);
-    inc.cargoAgencia = computeHeaderCargoAgencia(activas);
-    inc.origenes = origenesDistintos(activas);
-    inc.accionesRealizar = cloneAccionesRealizar(header.accionesRealizar);
-    inc.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: diffCambiosIncidencia(beforeInc, inc) });
+    // En la nube se trabaja sobre una copia y solo se aplica a la incidencia real si el servidor confirma el guardado.
+    const t = CLOUD ? Object.assign({}, inc, { historial: (inc.historial||[]).slice() }) : inc;
+    t.fechaComunicacion = header.fechaComunicacion;
+    t.cliente = Object.assign({}, header.cliente);
+    t.albaran = header.albaran ? Object.assign({}, header.albaran) : null;
+    t.manualEnEspera = header.manualEnEspera;
+    t.comunicacionCliente = header.comunicacionCliente.slice();
+    t.documentos = header.documentos.slice();
+    t.observaciones = header.observaciones || '';
+    t.lineas = activas.map(l=> Object.assign({}, l, {marcada:false}));
+    t.estado = computeHeaderEstado(activas, header.manualEnEspera);
+    t.recogida = computeHeaderRecogida(activas);
+    t.recogidas = recogidasDistintas(activas);
+    t.cargoAgencia = computeHeaderCargoAgencia(activas);
+    t.origenes = origenesDistintos(activas);
+    t.accionesRealizar = cloneAccionesRealizar(header.accionesRealizar);
+    t.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: diffCambiosIncidencia(beforeInc, t) });
+    if(CLOUD){
+      try{ await nubeGuardar(t); }
+      catch(e){ nubeError(e, inc); return; }
+      Object.assign(inc, t);
+    }
     persistIncidencias();
     toast(`Incidencia #${inc.id} actualizada.`);
     const savedId = inc.id;
-    editingId = null;
+    editingId = null; editingVersion = null;
     header = emptyHeader(); lineas = [];
     renderAll();
     expandedId = savedId;
@@ -2633,7 +3026,7 @@ function guardarIncidencia(){
   }
 
   const rec = {
-    id: nextIncidenciaNum++,
+    id: CLOUD ? null : nextIncidenciaNum++,
     usuario: state.usuario || '—',
     fechaApertura: header.fechaApertura,
     fechaComunicacion: header.fechaComunicacion,
@@ -2652,16 +3045,27 @@ function guardarIncidencia(){
     accionesRealizar: cloneAccionesRealizar(header.accionesRealizar),
     historial: [{ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio:'Incidencia creada' }]
   };
+  if(CLOUD){
+    try{ await nubeCrear(rec); }
+    catch(e){ nubeError(e, { id: '(nueva)' }); return; }
+  }
   incidencias.unshift(rec);
   persistIncidencias();
   toast(`Incidencia #${rec.id} guardada correctamente.`);
   resetForm(false);
   switchTab('consulta');
+
+  } finally {
+    guardandoIncidencia = false;
+    if(btnGuardar) btnGuardar.disabled = false;
+    if(CLOUD && nubeRecargaPend) nubeProgramarRecarga();
+  }
 }
 function editarIncidencia(id){
   const inc = incidencias.find(i=>i.id===id);
   if(!inc) return;
   editingId = id;
+  editingVersion = inc.version == null ? null : inc.version;
   header = {
     fechaApertura: inc.fechaApertura,
     fechaComunicacion: inc.fechaComunicacion,
@@ -3367,9 +3771,7 @@ async function generarImpresoAccion(bloqueId){
   if(!bloque){ toast('No se encontró esa acción a realizar.', 'error'); return; }
   const lineasBloque = bloque.lineaIds.map(id=> lineas.find(l=>l.id===id)).filter(Boolean);
   if(!lineasBloque.length){ toast('Esta acción no tiene líneas asociadas.', 'error'); return; }
-  if(!window.claude || typeof window.claude.use !== 'function'){ toast('La descarga no está disponible en esta vista.', 'error'); return; }
-  const downloads = await window.claude.use('downloads');
-  if(!downloads){ toast('La descarga no está disponible en esta vista.', 'error'); return; }
+  const downloads = await obtenerDescargas();
   const esAbono = bloque.tipo==='abono';
   const nombreAccion = accionDesc(bloque.tipo);
   // Mientras la incidencia no se ha guardado todavía no tiene número propio: usamos el número que
@@ -3393,9 +3795,7 @@ async function generarImpresoAccionGuardada(incId, bloqueId){
   if(!bloque){ toast('No se encontró esa acción a realizar.', 'error'); return; }
   const lineasBloque = bloque.lineaIds.map(id=> inc.lineas.find(l=>l.id===id)).filter(Boolean);
   if(!lineasBloque.length){ toast('Esta acción no tiene líneas asociadas.', 'error'); return; }
-  if(!window.claude || typeof window.claude.use !== 'function'){ toast('La descarga no está disponible en esta vista.', 'error'); return; }
-  const downloads = await window.claude.use('downloads');
-  if(!downloads){ toast('La descarga no está disponible en esta vista.', 'error'); return; }
+  const downloads = await obtenerDescargas();
   const esAbono = bloque.tipo==='abono';
   const nombreAccion = accionDesc(bloque.tipo);
   const lineasBloqueQty = lineasDeBloqueConQty(bloque, lineasBloque);
@@ -3419,7 +3819,16 @@ function limpiarFiltros(){
 function eliminarIncidencia(id){
   const inc = incidencias.find(i=>i.id===id);
   if(!inc) return;
-  confirmDialog(`¿Eliminar la incidencia #${id}? Esta acción no se puede deshacer.`, ()=>{
+  confirmDialog(`¿Eliminar la incidencia #${id}? Esta acción no se puede deshacer.`, async ()=>{
+    if(CLOUD){
+      // En la nube se borra primero en Supabase (con sus líneas, acciones y daños, en cascada); si falla no se quita de pantalla.
+      try{
+        const r = await sb.from('incidencias').delete().eq('numero', id).select('numero');
+        if(r.error) throw r.error;
+        if(!r.data || !r.data.length) throw new Error('No se ha podido borrar (sin permisos o ya no existía).');
+      }catch(e){ toast('No se ha podido eliminar la incidencia en la nube: ' + String((e && e.message) || e), 'error'); return; }
+      nubePend.delete(id); nubeSync.delete(id);
+    }
     incidencias = incidencias.filter(i=>i.id!==id);
     if(expandedId===id) expandedId = null;
     if(editingId===id){ editingId = null; header = emptyHeader(); lineas = []; renderAll(); }
@@ -3583,7 +3992,7 @@ function buildFileListReadonly(files, incId, key){
   if(!files.length) return '<span class="mod-log">Sin archivos</span>';
   return files.map((f,i)=>`<div class="fileitem">
     <span>📄</span><span class="fname">${escapeHtml(f.name)}</span><span class="mod-log">${fmtSize(f.size)}</span>
-    <button class="dl" data-dlfile="${incId}|${key}|${i}" title="${f.file?'Descargar':'Ejemplo sin archivo real'}" ${f.file?'':'disabled'}>⬇</button>
+    <button class="dl" data-dlfile="${incId}|${key}|${i}" title="${(f.file||f.path)?'Descargar':'Solo consta el nombre del archivo (sin contenido guardado)'}" ${(f.file||f.path)?'':'disabled'}>⬇</button>
   </div>`).join('');
 }
 function buildExpandRow(inc){
@@ -3758,11 +4167,7 @@ async function ejecutarExportarExcel(modo){
   const buf = XLSX.write(wb, { bookType:'xlsx', type:'array' });
   const blob = new Blob([buf], { type:'application/octet-stream' });
 
-  if(!window.claude || typeof window.claude.use !== 'function'){
-    toast('La exportación a archivo no está disponible en esta vista.', 'error'); return;
-  }
-  const downloads = await window.claude.use('downloads');
-  if(!downloads){ toast('La exportación a archivo no está disponible en esta vista.', 'error'); return; }
+  const downloads = await obtenerDescargas();
 
   try{
     const res = await downloads.save({ filename: `${filenameSuffix}_${todayISO()}.xlsx`, data: blob });
@@ -3836,6 +4241,8 @@ function init(){
   appendOptions(document.getElementById('fCargoAgencia'), CARGO_AGENCIA_OPTS, o=>o, o=>o);
   appendOptions(document.getElementById('fAccion'), ACCIONES_INCIDENCIA, a=>a.cod, a=>a.desc);
 
+  if(CLOUD){ iniciarNube(); return; }
+
   const params = new URLSearchParams(location.search);
   const incParam = params.get('incidencia');
   if(incParam){
@@ -3864,6 +4271,21 @@ function init(){
   seedExamples();
   persistIncidencias();
   renderAll();
+}
+async function iniciarNube(){
+  // Pantalla de acceso adaptada: en la nube se entra con el correo de Supabase Auth.
+  const lbl = document.getElementById('loginUsuario'); 
+  if(lbl){ lbl.type = 'email'; if(lbl.previousElementSibling) lbl.previousElementSibling.textContent = 'Correo electrónico'; }
+  renderAll();
+  const errBox = document.getElementById('loginError');
+  if(!nubeCliente()){ if(errBox) errBox.textContent = 'No se ha podido cargar el componente de conexión con la base de datos. Recarga la página.'; return; }
+  sb.auth.onAuthStateChange((evento)=>{
+    if(evento === 'SIGNED_OUT'){ setTimeout(()=>{ document.body.classList.remove('app-auth'); }, 0); }
+  });
+  try{
+    const r = await sb.auth.getSession();
+    if(r && r.data && r.data.session) await nubeEntrar(r.data.session);
+  }catch(e){ if(errBox) errBox.textContent = 'No se ha podido conectar con el servidor. Revisa la conexión.'; }
 }
 init();
 </script>
