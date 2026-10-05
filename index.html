@@ -55,7 +55,7 @@
     position:sticky;top:env(safe-area-inset-top,0px);z-index:40;
     background:var(--surface);border-bottom:1px solid var(--border);
   }
-  .topbar-inner{max-width:1500px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
+  .topbar-inner{max-width:min(1900px,98vw);margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;}
   .brand{display:flex;align-items:baseline;gap:10px;}
   .brand-mark{
     width:30px;height:30px;border-radius:8px;background:var(--accent);color:#fff;
@@ -77,7 +77,9 @@
     text-align:center;font-family:var(--font-mono);
   }
 
-  .container{max-width:1500px;margin:0 auto;padding:24px 20px 0;display:flex;flex-direction:column;gap:20px;}
+  .consulta-row td.col-cliente{min-width:260px;white-space:normal;line-height:1.3;}
+  .consulta-row td .sub-line{display:block;font-size:11px;color:var(--text-faint);font-family:inherit;margin-top:2px;white-space:normal;}
+  .container{max-width:min(1900px,98vw);margin:0 auto;padding:24px 20px 0;display:flex;flex-direction:column;gap:20px;}
   .view{display:none;}
   .view.active{display:flex;flex-direction:column;gap:20px;}
 
@@ -441,6 +443,10 @@
               <label>Nº Albarán <span class="req">*</span> <span class="kbd">F4</span></label>
               <div id="albaranFieldBox"></div>
             </div>
+            <div class="field">
+              <label>Ref. cliente <span class="mod-log">(máx. 30)</span></label>
+              <input type="text" id="referenciaCliente" maxlength="30" placeholder="Referencia / nº de pedido del cliente" oninput="header.referenciaCliente=this.value">
+            </div>
           </div>
 
           <div class="divider"></div>
@@ -556,6 +562,7 @@
             <div class="field"><label>Usuario</label><input type="text" id="fUsuario" class="mono"></div>
             <div class="field"><label>Cliente</label><input type="text" id="fCliente"></div>
             <div class="field"><label>Nº Albarán</label><input type="text" id="fAlbaran" class="mono"></div>
+            <div class="field"><label>Ref. cliente</label><input type="text" id="fRefCliente" maxlength="30" placeholder="Referencia del cliente"></div>
             <div class="field"><label>Origen *</label><select id="fOrigen"><option value="">Todos</option></select></div>
             <div class="field"><label>Estado</label><select id="fEstado"><option value="">Todos</option></select></div>
             <div class="field"><label>Recogida *</label><select id="fRecogida"><option value="">Todas</option></select></div>
@@ -589,7 +596,6 @@
                 <th class="th-sortable" id="thConsultaId" onclick="ordenarConsulta('id')">Nº<span class="sort-arrow"></span></th>
                 <th class="th-sortable" id="thConsultaFApertura" onclick="ordenarConsulta('fechaApertura')">F. apertura<span class="sort-arrow"></span></th>
                 <th class="th-sortable" id="thConsultaFComunicacion" onclick="ordenarConsulta('fechaComunicacion')">F. comunicación<span class="sort-arrow"></span></th>
-                <th>Usuario</th>
                 <th class="th-sortable" id="thConsultaCliente" onclick="ordenarConsulta('cliente')">Cliente<span class="sort-arrow"></span></th>
                 <th class="th-sortable" id="thConsultaAlbaran" onclick="ordenarConsulta('albaran')">Nº Albarán<span class="sort-arrow"></span></th>
                 <th>Orígenes</th>
@@ -663,7 +669,7 @@
     <div class="modal-body">
       <div class="search-input-wrap">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input type="text" id="albaranSearchInput" placeholder="Nº albarán, cliente o artículo (código/descripción)…" oninput="renderAlbaranResults(this.value)" autocomplete="off">
+        <input type="text" id="albaranSearchInput" placeholder="Nº albarán, ref. del cliente, cliente o artículo…" oninput="renderAlbaranResults(this.value)" autocomplete="off">
       </div>
       <div class="search-results" id="albaranResults"></div>
     </div>
@@ -882,14 +888,14 @@ function incARemoto(inc){
     usuario: inc.usuario, fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion,
     origenes: (inc.origenes||[]).slice(), cliente: inc.cliente, albaran: inc.albaran || null,
     manualEnEspera: !!inc.manualEnEspera, estado: inc.estado, recogida: inc.recogida || null, recogidas: (inc.recogidas||[]).slice(),
-    cargoAgencia: inc.cargoAgencia || null, observaciones: inc.observaciones || '',
+    cargoAgencia: inc.cargoAgencia || null, observaciones: inc.observaciones || '', referenciaCliente: inc.referenciaCliente || '',
     accionesRealizar: acciones, comunicacionCliente: archivosRemotos(inc.comunicacionCliente), documentos: archivosRemotos(inc.documentos),
     historial: inc.historial || []
   };
   const alb = inc.albaran;
   return {
     fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion, estado: inc.estado,
-    cargoAgencia: inc.cargoAgencia || null, manualEnEspera: !!inc.manualEnEspera, observaciones: inc.observaciones || '',
+    cargoAgencia: inc.cargoAgencia || null, manualEnEspera: !!inc.manualEnEspera, observaciones: inc.observaciones || '', referenciaCliente: inc.referenciaCliente || '',
     cliente: { empresa: inc.cliente && inc.cliente.empresa != null ? inc.cliente.empresa : 1, cod: String(inc.cliente.cod) },
     albaran: alb ? { empresa: alb.empresa, ejercicio: alb.ejercicio, serie: alb.serie, numero: alb.numero } : null,
     datos, lineas: lin, accionesRealizar: acciones
@@ -1157,7 +1163,7 @@ if(!CLOUD) comprobarSesionGuardada();
 
 function emptyHeader(){
   return { fechaApertura: todayISO(), fechaComunicacion:'', cliente:null, albaran:null,
-    manualEnEspera:false, comunicacionCliente:[], documentos:[], accionesRealizar:[], observaciones:'' };
+    manualEnEspera:false, comunicacionCliente:[], documentos:[], accionesRealizar:[], observaciones:'', referenciaCliente:'' };
 }
 const ACCIONES_INCIDENCIA = [
   { cod:'reposicion', desc:'Reposición' },
@@ -1422,6 +1428,8 @@ function accionesDescLinea(bloques, lineaId){
    más de una de estas columnas a la vez — no hay doble contabilización dentro de una misma columna,
    cada línea cuenta como mucho 1 vez por tipo de acción. Se usa en la cabecera de Consulta (una
    columna por tipo de acción) y en su exportación a Excel, para que ambas coincidan siempre. */
+/* Referencia del cliente de una incidencia: la que se haya escrito en el formulario; si no hay, la que traiga el albarán del ERP. */
+function refClienteDe(inc){ return String(inc.referenciaCliente || (inc.albaran && inc.albaran.referenciaCliente) || ''); }
 function lineasConAccionCount(inc, tipoCod){
   const lineasActivas = (inc.lineas||[]).filter(l=>!l.eliminada);
   return lineasActivas.filter(l=> accionesTiposDeLinea(inc.accionesRealizar, l.id).includes(tipoCod)).length;
@@ -1623,7 +1631,7 @@ function renderAlbaranField(){
   if(header.albaran){
     const a = header.albaran;
     box.innerHTML = `<div class="selected-chip">
-      <div><div class="name">Albarán ${a.numAlbaran}</div><div class="sub">${fmtDate(a.fecha)} · ${escapeHtml(a.cliente)}</div></div>
+      <div><div class="name">Albarán ${a.numAlbaran}</div><div class="sub">${fmtDate(a.fecha)} · ${escapeHtml(a.cliente)}${a.referenciaCliente?` · Ref. cliente: ${escapeHtml(a.referenciaCliente)}`:''}</div></div>
       <button title="Quitar albarán">✕</button></div>`;
     box.querySelector('button').addEventListener('click', clearAlbaran);
   } else {
@@ -1697,9 +1705,9 @@ async function dsBuscarAlbaranes(q){
   const ql = q.toLowerCase();
   const lista = (r.data||[]).map(x=>{
     const a = { key:`${x.empresa}-${x.ejercicio}-${x.serie}-${x.numero}`, empresa:x.empresa, ejercicio:x.ejercicio, serie:x.serie, numero:x.numero,
-      numAlbaran:`${x.serie}/${x.numero}`, numFactura:x.numfactura, fecha:x.fecha, codCliente:String(x.codcliente), cliente:x.cliente||'' };
+      numAlbaran:`${x.serie}/${x.numero}`, numFactura:x.numfactura, fecha:x.fecha, codCliente:String(x.codcliente), cliente:x.cliente||'', referenciaCliente:x.referenciacliente||'' };
     // Solo se ofrece "cargar solo esta referencia" si la búsqueda NO coincide con el nº de albarán ni con el cliente.
-    const porNumeroOCliente = ql && (a.numAlbaran.toLowerCase().includes(ql) || String(x.numero).includes(ql) || a.cliente.toLowerCase().includes(ql));
+    const porNumeroOCliente = ql && (a.numAlbaran.toLowerCase().includes(ql) || String(x.numero).includes(ql) || a.cliente.toLowerCase().includes(ql) || (a.referenciaCliente||'').toLowerCase().includes(ql));
     a._articuloMatch = (ql && !porNumeroOCliente && x.articulo_cod) ? { codArticulo:x.articulo_cod, descripcion:x.articulo_desc||'' } : null;
     return a;
   });
@@ -1761,7 +1769,7 @@ async function _renderAlbaranResults(q){
   _albLista = res.lista;
   if(!_albLista.length){ results.innerHTML = '<div class="empty-state">Sin resultados' + (header.cliente ? ` para «${escapeHtml(header.cliente.nombre)}»` : '') + '</div>'; return; }
   results.innerHTML = _albLista.map((a,i) => `<div class="search-row" data-i="${i}">
-      <div><div class="name">Albarán ${escapeHtml(String(a.numAlbaran))}</div><div class="sub">${escapeHtml(a.cliente)}${a._articuloMatch?` · 📦 ${escapeHtml(String(a._articuloMatch.codArticulo))} — ${escapeHtml(a._articuloMatch.descripcion||'')} <span class="mod-log">(se cargará solo esta referencia)</span>`:''}</div></div>
+      <div><div class="name">Albarán ${escapeHtml(String(a.numAlbaran))}${a.referenciaCliente?` <span class="mod-log">· Ref. cliente: ${escapeHtml(a.referenciaCliente)}</span>`:''}</div><div class="sub">${escapeHtml(a.cliente)}${a._articuloMatch?` · 📦 ${escapeHtml(String(a._articuloMatch.codArticulo))} — ${escapeHtml(a._articuloMatch.descripcion||'')} <span class="mod-log">(se cargará solo esta referencia)</span>`:''}</div></div>
       <div class="meta">${fmtDate(a.fecha)}<br>Fra. ${a.numFactura ?? '—'}</div></div>`).join('')
     + (res.total>80 || (CLOUD && _albLista.length>=80) ? `<div class="empty-state">Mostrando los primeros 80 resultados. Afina la búsqueda.</div>` : '');
   results.querySelectorAll('[data-i]').forEach(row => {
@@ -1780,6 +1788,7 @@ async function selectAlbaran(a, soloArticuloCod){
     header.cliente = { empresa:a.empresa, cod:a.codCliente, nombre:a.cliente, cif:a.cif||'' };
   }
   lineas = mergeLineasRaw(raw, soloArticuloCod || null).map(makeLinea);
+  if(a.referenciaCliente && !String(header.referenciaCliente||'').trim()){ header.referenciaCliente = String(a.referenciaCliente).slice(0,30); }
   closeModal('modalAlbaran');
   renderAll();
   if(soloArticuloCod){
@@ -2674,6 +2683,7 @@ function diffCambiosIncidencia(before, after){
   if(beforeOrig !== afterOrig) cambios.push(`Orígenes: ${beforeOrig||'—'} → ${afterOrig||'—'}`);
   if(!!before.manualEnEspera !== !!after.manualEnEspera) cambios.push(`En espera: ${before.manualEnEspera?'Sí':'No'} → ${after.manualEnEspera?'Sí':'No'}`);
   if((before.cargoAgencia||null) !== (after.cargoAgencia||null)) cambios.push(`Cargo agencia: ${before.cargoAgencia||'—'} → ${after.cargoAgencia||'—'}`);
+  if((before.referenciaCliente||'') !== (after.referenciaCliente||'')) cambios.push(`Ref. cliente: ${before.referenciaCliente||'—'} → ${after.referenciaCliente||'—'}`);
   if((before.observaciones||'') !== (after.observaciones||'')) cambios.push(`Observaciones de cabecera modificadas`);
   const beforeIds = new Set(before.lineas.map(l=>l.id));
   const afterIds = new Set(after.lineas.map(l=>l.id));
@@ -2867,7 +2877,7 @@ function persistIncidencias(){
       id: inc.id, usuario: inc.usuario, fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion,
       origenes: (inc.origenes||[]).slice(), cliente: inc.cliente, albaran: inc.albaran, manualEnEspera: inc.manualEnEspera,
       estado: inc.estado, recogida: inc.recogida || null, cargoAgencia: inc.cargoAgencia || null,
-      accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar),
+      accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar), referenciaCliente: inc.referenciaCliente || '', observaciones: inc.observaciones || '',
       comunicacionCliente: (inc.comunicacionCliente||[]).map(f=>({name:f.name,size:f.size})),
       documentos: (inc.documentos||[]).map(f=>({name:f.name,size:f.size})),
       lineas: (inc.lineas||[]).map(l=>({
@@ -3001,6 +3011,7 @@ async function guardarIncidencia(){
     t.comunicacionCliente = header.comunicacionCliente.slice();
     t.documentos = header.documentos.slice();
     t.observaciones = header.observaciones || '';
+    t.referenciaCliente = (header.referenciaCliente || '').trim().slice(0,30);
     t.lineas = activas.map(l=> Object.assign({}, l, {marcada:false}));
     t.estado = computeHeaderEstado(activas, header.manualEnEspera);
     t.recogida = computeHeaderRecogida(activas);
@@ -3037,6 +3048,7 @@ async function guardarIncidencia(){
     comunicacionCliente: header.comunicacionCliente.slice(),
     documentos: header.documentos.slice(),
     observaciones: header.observaciones || '',
+    referenciaCliente: (header.referenciaCliente || '').trim().slice(0,30),
     lineas: activas.map(l=> Object.assign({}, l, {marcada:false})),
     recogida: computeHeaderRecogida(activas),
     recogidas: recogidasDistintas(activas),
@@ -3075,6 +3087,7 @@ function editarIncidencia(id){
     comunicacionCliente: inc.comunicacionCliente.map(f=> Object.assign({}, f)),
     documentos: inc.documentos.map(f=> Object.assign({}, f)),
     accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar),
+    referenciaCliente: inc.referenciaCliente || '',
     observaciones: inc.observaciones || ''
   };
   lineas = inc.lineas.map(l=> Object.assign({}, l, { marcada:false, adjuntos:(l.adjuntos||[]).map(a=> Object.assign({}, a)) }));
@@ -3148,6 +3161,7 @@ function renderAll(){
   document.getElementById('fechaApertura').value = header.fechaApertura;
   document.getElementById('fechaComunicacion').value = header.fechaComunicacion;
   document.getElementById('observacionesHeader').value = header.observaciones || '';
+  document.getElementById('referenciaCliente').value = header.referenciaCliente || '';
   renderClienteField();
   renderAlbaranField();
   renderHeaderEstadoBox();
@@ -3812,7 +3826,7 @@ async function generarImpresoAccionGuardada(incId, bloqueId){
 
 /* ================= CONSULTA ================= */
 function limpiarFiltros(){
-  ['fNum','fUsuario','fCliente','fAlbaran','fFechaDesde','fFechaHasta'].forEach(id=> document.getElementById(id).value='');
+  ['fNum','fUsuario','fCliente','fAlbaran','fRefCliente','fFechaDesde','fFechaHasta'].forEach(id=> document.getElementById(id).value='');
   ['fOrigen','fEstado','fRecogida','fCargoAgencia','fAccion'].forEach(id=> document.getElementById(id).value='');
   renderConsulta();
 }
@@ -3876,6 +3890,7 @@ function renderConsulta(){
   const usuario = document.getElementById('fUsuario').value.trim().toLowerCase();
   const cliente = document.getElementById('fCliente').value.trim().toLowerCase();
   const albaran = document.getElementById('fAlbaran').value.trim();
+  const refCliente = document.getElementById('fRefCliente').value.trim().toLowerCase();
   const origen = document.getElementById('fOrigen').value;
   const estado = document.getElementById('fEstado').value;
   const recogida = document.getElementById('fRecogida').value;
@@ -3889,6 +3904,7 @@ function renderConsulta(){
     if(usuario && !String(inc.usuario).toLowerCase().includes(usuario)) return false;
     if(cliente && !inc.cliente.nombre.toLowerCase().includes(cliente)) return false;
     if(albaran && !String(inc.albaran ? inc.albaran.numAlbaran : '').includes(albaran)) return false;
+    if(refCliente && !refClienteDe(inc).toLowerCase().includes(refCliente)) return false;
     if(origen && !(inc.origenes||[]).includes(origen)) return false;
     if(estado && inc.estado!==estado) return false;
     if(recogida && !(inc.recogidas||[]).includes(recogida)) return false;
@@ -3905,7 +3921,7 @@ function renderConsulta(){
   document.getElementById('consultaCount').textContent = `${list.length} incidencia(s) de ${incidencias.length}`;
   const tbody = document.getElementById('consultaTbody');
   if(!list.length){
-    tbody.innerHTML = `<tr><td colspan="18"><div class="empty-state">No hay incidencias que coincidan con la búsqueda.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="16"><div class="empty-state">No hay incidencias que coincidan con la búsqueda.</div></td></tr>`;
     return;
   }
   const expandedVisible = expandedId!=null && list.some(i=>i.id===expandedId);
@@ -3914,12 +3930,11 @@ function renderConsulta(){
     if(expandedVisible && !isExp) return ''; // mientras hay una incidencia desplegada, ocultamos el resto
     return `<tr class="consulta-row ${isExp?'expanded':''}" data-id="${inc.id}" title="Ver detalle">
       <td>${isExp?'▾':'▸'}</td>
-      <td class="mono">#${inc.id}</td>
+      <td class="mono">#${inc.id}<span class="sub-line" title="Usuario que la creó">👤 ${escapeHtml(inc.usuario)}</span></td>
       <td>${fmtDate(inc.fechaApertura)}</td>
       <td>${fmtDate(inc.fechaComunicacion)}</td>
-      <td class="mono">${escapeHtml(inc.usuario)}</td>
-      <td>${escapeHtml(inc.cliente.nombre)}</td>
-      <td class="mono">${inc.albaran ? inc.albaran.numAlbaran : '<span class="mod-log">Sin albarán</span>'}</td>
+      <td class="col-cliente">${escapeHtml(inc.cliente.nombre)}</td>
+      <td class="mono">${inc.albaran ? escapeHtml(String(inc.albaran.numAlbaran)) : '<span class="mod-log">Sin albarán</span>'}${refClienteDe(inc) ? `<span class="sub-line" title="Referencia del cliente">Ref: ${escapeHtml(refClienteDe(inc))}</span>` : ''}</td>
       <td>${origenesChipsHtml(inc.origenes)}</td>
       <td>${estadoPill(inc.estado)}</td>
       <td>${recogidasChipsHtml(inc.recogidas)}</td>
@@ -3996,7 +4011,7 @@ function buildFileListReadonly(files, incId, key){
   </div>`).join('');
 }
 function buildExpandRow(inc){
-  return `<tr class="expand-panel"><td colspan="19"><div class="expand-inner">
+  return `<tr class="expand-panel"><td colspan="17"><div class="expand-inner">
     <div class="toolbar" style="margin-bottom:14px;">
       <div class="spacer"></div>
       <button class="btn btn-sm btn-primary" data-editinc="${inc.id}">✎ Editar incidencia</button>
@@ -4101,6 +4116,7 @@ function cabeceraExcelCols(inc){
     'Cliente': inc.cliente.nombre,
     'CIF': inc.cliente.cif || '',
     'Nº Albarán': inc.albaran ? inc.albaran.numAlbaran : '',
+    'Ref. cliente': refClienteDe(inc),
     'Orígenes': (inc.origenes||[]).join(', '),
     ...origenesCols,
     'Estado': estadoDesc(inc.estado),
@@ -4116,7 +4132,7 @@ async function ejecutarExportarExcel(modo){
   if(!lastConsultaList.length){ toast('No hay resultados que exportar. Ajusta la búsqueda.', 'error'); return; }
   if(typeof XLSX === 'undefined'){ toast('La librería de exportación aún está cargando, prueba de nuevo en unos segundos.', 'error'); return; }
 
-  const cabeceraColWidths = [{wch:11},{wch:12},{wch:15},{wch:9},{wch:34},{wch:13},{wch:10},{wch:22},{wch:12},{wch:13},{wch:12},{wch:11},{wch:12},{wch:12},{wch:14},{wch:14},{wch:11},{wch:11},{wch:9},{wch:40}];
+  const cabeceraColWidths = [{wch:11},{wch:12},{wch:15},{wch:9},{wch:34},{wch:13},{wch:10},{wch:18},{wch:22},{wch:12},{wch:13},{wch:12},{wch:11},{wch:12},{wch:12},{wch:14},{wch:14},{wch:11},{wch:11},{wch:9},{wch:40}];
   let rows, sheetName, filenameSuffix, colWidths;
 
   if(modo==='lineas'){
