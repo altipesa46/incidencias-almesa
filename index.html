@@ -78,6 +78,11 @@
   }
 
   .consulta-row td.col-cliente{min-width:260px;white-space:normal;line-height:1.3;}
+  .filtros-activos{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+  .filtros-activos:empty{display:none;}
+  .chip-filtro{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:100px;border:1px solid var(--accent);background:var(--accent-soft-2);color:var(--accent-dark);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .chip-filtro:hover{filter:brightness(.95);}
+  .tag-empresa{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;padding:1px 7px;margin-right:6px;border-radius:4px;background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);vertical-align:1px;}
   .consulta-row td .sub-line{display:block;font-size:11px;color:var(--text-faint);font-family:inherit;margin-top:2px;white-space:normal;}
   .container{max-width:min(1900px,98vw);margin:0 auto;padding:24px 20px 0;display:flex;flex-direction:column;gap:20px;}
   .view{display:none;}
@@ -436,6 +441,10 @@
         <div class="card-body">
           <div class="field-grid">
             <div class="field">
+              <label>Empresa <span class="req">*</span></label>
+              <select id="empresaGrupo" onchange="header.empresaGrupo=this.value"><option value="">— Seleccionar —</option></select>
+            </div>
+            <div class="field">
               <label>Cliente <span class="req">*</span> <span class="kbd">F4</span></label>
               <div id="clienteFieldBox"></div>
             </div>
@@ -446,6 +455,10 @@
             <div class="field">
               <label>Ref. cliente <span class="mod-log">(máx. 30)</span></label>
               <input type="text" id="referenciaCliente" maxlength="30" placeholder="Referencia / nº de pedido del cliente" oninput="header.referenciaCliente=this.value">
+            </div>
+            <div class="field">
+              <label>Cliente final <span class="mod-log">(máx. 30)</span></label>
+              <input type="text" id="clienteFinal" maxlength="30" placeholder="Cliente final / destinatario" oninput="header.clienteFinal=this.value">
             </div>
           </div>
 
@@ -558,11 +571,13 @@
         <div class="card-head"><h2>Buscar incidencias</h2></div>
         <div class="card-body">
           <div class="filter-grid">
+            <div class="field"><label>Empresa</label><select id="fEmpresa"><option value="">Todas</option></select></div>
             <div class="field"><label>Nº incidencia</label><input type="text" id="fNum" class="mono"></div>
             <div class="field"><label>Usuario</label><input type="text" id="fUsuario" class="mono"></div>
             <div class="field"><label>Cliente</label><input type="text" id="fCliente"></div>
             <div class="field"><label>Nº Albarán</label><input type="text" id="fAlbaran" class="mono"></div>
             <div class="field"><label>Ref. cliente</label><input type="text" id="fRefCliente" maxlength="30" placeholder="Referencia del cliente"></div>
+            <div class="field"><label>Cliente final</label><input type="text" id="fClienteFinal" maxlength="30" placeholder="Cliente final"></div>
             <div class="field"><label>Origen *</label><select id="fOrigen"><option value="">Todos</option></select></div>
             <div class="field"><label>Estado</label><select id="fEstado"><option value="">Todos</option></select></div>
             <div class="field"><label>Recogida *</label><select id="fRecogida"><option value="">Todas</option></select></div>
@@ -571,12 +586,13 @@
             <div class="field"><label>Fecha apertura desde</label><input type="date" id="fFechaDesde"></div>
             <div class="field"><label>Fecha apertura hasta</label><input type="date" id="fFechaHasta"></div>
           </div>
+          <div id="filtrosActivos" class="filtros-activos" aria-live="polite"></div>
           <div class="toolbar" style="margin-top:16px;">
-            <button class="btn" onclick="limpiarFiltros()">Limpiar</button>
+            <button class="btn btn-danger" id="btnQuitarFiltros" onclick="limpiarFiltros()" title="Quitar todos los filtros y volver a ver todas las incidencias">✖ Quitar filtros</button>
             <div class="spacer"></div>
-            <button class="btn btn-primary" onclick="renderConsulta()">🔍 Buscar</button>
+            <button class="btn btn-primary" onclick="aplicarFiltrosConsulta()">🔍 Buscar</button>
           </div>
-          <div class="hint" style="margin-top:8px;">* Origen, Recogida y Acción: se buscan incidencias con alguna línea que tenga ese valor.</div>
+          <div class="hint" style="margin-top:8px;">Los filtros se aplican al momento y se van sumando: cada filtro nuevo reduce el resultado de los anteriores. * Origen, Recogida y Acción: se buscan incidencias con alguna línea que tenga ese valor.</div>
         </div>
       </div>
 
@@ -888,14 +904,14 @@ function incARemoto(inc){
     usuario: inc.usuario, fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion,
     origenes: (inc.origenes||[]).slice(), cliente: inc.cliente, albaran: inc.albaran || null,
     manualEnEspera: !!inc.manualEnEspera, estado: inc.estado, recogida: inc.recogida || null, recogidas: (inc.recogidas||[]).slice(),
-    cargoAgencia: inc.cargoAgencia || null, observaciones: inc.observaciones || '', referenciaCliente: inc.referenciaCliente || '',
+    cargoAgencia: inc.cargoAgencia || null, observaciones: inc.observaciones || '', referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', empresaGrupo: inc.empresaGrupo || '',
     accionesRealizar: acciones, comunicacionCliente: archivosRemotos(inc.comunicacionCliente), documentos: archivosRemotos(inc.documentos),
     historial: inc.historial || []
   };
   const alb = inc.albaran;
   return {
     fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion, estado: inc.estado,
-    cargoAgencia: inc.cargoAgencia || null, manualEnEspera: !!inc.manualEnEspera, observaciones: inc.observaciones || '', referenciaCliente: inc.referenciaCliente || '',
+    cargoAgencia: inc.cargoAgencia || null, manualEnEspera: !!inc.manualEnEspera, observaciones: inc.observaciones || '', referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', empresaGrupo: inc.empresaGrupo || '',
     cliente: { empresa: inc.cliente && inc.cliente.empresa != null ? inc.cliente.empresa : 1, cod: String(inc.cliente.cod) },
     albaran: alb ? { empresa: alb.empresa, ejercicio: alb.ejercicio, serie: alb.serie, numero: alb.numero } : null,
     datos, lineas: lin, accionesRealizar: acciones
@@ -1163,7 +1179,7 @@ if(!CLOUD) comprobarSesionGuardada();
 
 function emptyHeader(){
   return { fechaApertura: todayISO(), fechaComunicacion:'', cliente:null, albaran:null,
-    manualEnEspera:false, comunicacionCliente:[], documentos:[], accionesRealizar:[], observaciones:'', referenciaCliente:'' };
+    manualEnEspera:false, comunicacionCliente:[], documentos:[], accionesRealizar:[], observaciones:'', referenciaCliente:'', clienteFinal:'', empresaGrupo:'' };
 }
 const ACCIONES_INCIDENCIA = [
   { cod:'reposicion', desc:'Reposición' },
@@ -1172,6 +1188,7 @@ const ACCIONES_INCIDENCIA = [
   { cod:'abono', desc:'Abono' }
 ];
 const CARGO_AGENCIA_OPTS = ['Sí', 'No'];
+const EMPRESAS_GRUPO = ['Altipesa', 'KTL', 'Pirámica'];
 /* Avisos de recepción de mercancía cuando hay cargo a la agencia de transporte: se muestran tanto
    en el detalle de la línea (edición) como, en modo solo lectura, al desplegar la línea en Consulta. */
 const RECEPCION_AVISOS = [
@@ -2684,6 +2701,8 @@ function diffCambiosIncidencia(before, after){
   if(!!before.manualEnEspera !== !!after.manualEnEspera) cambios.push(`En espera: ${before.manualEnEspera?'Sí':'No'} → ${after.manualEnEspera?'Sí':'No'}`);
   if((before.cargoAgencia||null) !== (after.cargoAgencia||null)) cambios.push(`Cargo agencia: ${before.cargoAgencia||'—'} → ${after.cargoAgencia||'—'}`);
   if((before.referenciaCliente||'') !== (after.referenciaCliente||'')) cambios.push(`Ref. cliente: ${before.referenciaCliente||'—'} → ${after.referenciaCliente||'—'}`);
+  if((before.empresaGrupo||'') !== (after.empresaGrupo||'')) cambios.push(`Empresa: ${before.empresaGrupo||'—'} → ${after.empresaGrupo||'—'}`);
+  if((before.clienteFinal||'') !== (after.clienteFinal||'')) cambios.push(`Cliente final: ${before.clienteFinal||'—'} → ${after.clienteFinal||'—'}`);
   if((before.observaciones||'') !== (after.observaciones||'')) cambios.push(`Observaciones de cabecera modificadas`);
   const beforeIds = new Set(before.lineas.map(l=>l.id));
   const afterIds = new Set(after.lineas.map(l=>l.id));
@@ -2877,7 +2896,7 @@ function persistIncidencias(){
       id: inc.id, usuario: inc.usuario, fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion,
       origenes: (inc.origenes||[]).slice(), cliente: inc.cliente, albaran: inc.albaran, manualEnEspera: inc.manualEnEspera,
       estado: inc.estado, recogida: inc.recogida || null, cargoAgencia: inc.cargoAgencia || null,
-      accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar), referenciaCliente: inc.referenciaCliente || '', observaciones: inc.observaciones || '',
+      accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar), referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', empresaGrupo: inc.empresaGrupo || '', observaciones: inc.observaciones || '',
       comunicacionCliente: (inc.comunicacionCliente||[]).map(f=>({name:f.name,size:f.size})),
       documentos: (inc.documentos||[]).map(f=>({name:f.name,size:f.size})),
       lineas: (inc.lineas||[]).map(l=>({
@@ -2932,6 +2951,7 @@ function renderHeaderEstadoBox(){
 /* ================= GUARDAR / RESET ================= */
 function validarCabecera(){
   const errors = [];
+  if(!header.empresaGrupo || !EMPRESAS_GRUPO.includes(header.empresaGrupo)) errors.push({msg:'Selecciona la Empresa (Altipesa, KTL o Pirámica).', fieldId:'empresaGrupo'});
   if(!header.cliente) errors.push({msg:'Selecciona un cliente (botón 🔎 o F4 en el campo Cliente).', fieldId:'clienteTriggerInput'});
   // El albarán es opcional: una incidencia puede llevar solo líneas manuales (producto enviado sin estar en ningún albarán).
   if(!header.fechaComunicacion) errors.push({msg:'Indica la fecha de comunicación del cliente.', fieldId:'fechaComunicacion'});
@@ -3012,6 +3032,8 @@ async function guardarIncidencia(){
     t.documentos = header.documentos.slice();
     t.observaciones = header.observaciones || '';
     t.referenciaCliente = (header.referenciaCliente || '').trim().slice(0,30);
+    t.clienteFinal = (header.clienteFinal || '').trim().slice(0,30);
+    t.empresaGrupo = header.empresaGrupo || '';
     t.lineas = activas.map(l=> Object.assign({}, l, {marcada:false}));
     t.estado = computeHeaderEstado(activas, header.manualEnEspera);
     t.recogida = computeHeaderRecogida(activas);
@@ -3049,6 +3071,8 @@ async function guardarIncidencia(){
     documentos: header.documentos.slice(),
     observaciones: header.observaciones || '',
     referenciaCliente: (header.referenciaCliente || '').trim().slice(0,30),
+    clienteFinal: (header.clienteFinal || '').trim().slice(0,30),
+    empresaGrupo: header.empresaGrupo || '',
     lineas: activas.map(l=> Object.assign({}, l, {marcada:false})),
     recogida: computeHeaderRecogida(activas),
     recogidas: recogidasDistintas(activas),
@@ -3087,7 +3111,7 @@ function editarIncidencia(id){
     comunicacionCliente: inc.comunicacionCliente.map(f=> Object.assign({}, f)),
     documentos: inc.documentos.map(f=> Object.assign({}, f)),
     accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar),
-    referenciaCliente: inc.referenciaCliente || '',
+    referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', empresaGrupo: inc.empresaGrupo || '',
     observaciones: inc.observaciones || ''
   };
   lineas = inc.lineas.map(l=> Object.assign({}, l, { marcada:false, adjuntos:(l.adjuntos||[]).map(a=> Object.assign({}, a)) }));
@@ -3162,6 +3186,8 @@ function renderAll(){
   document.getElementById('fechaComunicacion').value = header.fechaComunicacion;
   document.getElementById('observacionesHeader').value = header.observaciones || '';
   document.getElementById('referenciaCliente').value = header.referenciaCliente || '';
+  document.getElementById('clienteFinal').value = header.clienteFinal || '';
+  document.getElementById('empresaGrupo').value = header.empresaGrupo || '';
   renderClienteField();
   renderAlbaranField();
   renderHeaderEstadoBox();
@@ -3825,9 +3851,43 @@ async function generarImpresoAccionGuardada(incId, bloqueId){
 }
 
 /* ================= CONSULTA ================= */
+const FILTROS_CONSULTA = [
+  {id:'fEmpresa',label:'Empresa'},{id:'fNum',label:'Nº'},{id:'fUsuario',label:'Usuario'},{id:'fCliente',label:'Cliente'},
+  {id:'fClienteFinal',label:'Cliente final'},{id:'fAlbaran',label:'Albarán'},{id:'fRefCliente',label:'Ref. cliente'},
+  {id:'fOrigen',label:'Origen'},{id:'fEstado',label:'Estado'},{id:'fRecogida',label:'Recogida'},{id:'fCargoAgencia',label:'Cargo agencia'},
+  {id:'fAccion',label:'Acción'},{id:'fFechaDesde',label:'Apertura desde'},{id:'fFechaHasta',label:'Apertura hasta'}
+];
+function valorFiltroTexto(el){
+  if(el.tagName==='SELECT') return el.selectedIndex>=0 ? el.options[el.selectedIndex].text : '';
+  if(el.type==='date' && el.value){ return fmtDate(el.value); }
+  return el.value.trim();
+}
+function renderFiltrosActivos(){
+  const box = document.getElementById('filtrosActivos');
+  if(!box) return 0;
+  const activos = FILTROS_CONSULTA.map(f=>{ const el=document.getElementById(f.id); const v = el ? (el.tagName==='SELECT' ? el.value : el.value.trim()) : ''; return v ? {id:f.id,label:f.label,texto:valorFiltroTexto(el)} : null; }).filter(Boolean);
+  box.innerHTML = activos.map(a=>`<button type="button" class="chip-filtro" data-quitar="${a.id}" title="Quitar este filtro">${escapeHtml(a.label)}: ${escapeHtml(a.texto)} ✕</button>`).join('');
+  box.querySelectorAll('[data-quitar]').forEach(b=> b.addEventListener('click', ()=>{ document.getElementById(b.dataset.quitar).value=''; aplicarFiltrosConsulta(); }));
+  const btn = document.getElementById('btnQuitarFiltros');
+  if(btn) btn.disabled = !activos.length;
+  return activos.length;
+}
+/* Aplica los filtros al momento. Se cierra cualquier incidencia desplegada, porque mientras hay una abierta la tabla oculta el resto. */
+function aplicarFiltrosConsulta(){ expandedId = null; renderConsulta(); }
+function initFiltrosConsulta(){
+  const grid = document.querySelector('#view-consulta .filter-grid');
+  if(!grid) return;
+  grid.querySelectorAll('select, input[type="date"]').forEach(el=> el.addEventListener('change', aplicarFiltrosConsulta));
+  let timer = null;
+  grid.querySelectorAll('input[type="text"]').forEach(el=>{
+    el.addEventListener('input', ()=>{ clearTimeout(timer); timer = setTimeout(aplicarFiltrosConsulta, 200); });
+    el.addEventListener('keydown', e=>{ if(e.key==='Enter'){ clearTimeout(timer); aplicarFiltrosConsulta(); } });
+  });
+}
 function limpiarFiltros(){
-  ['fNum','fUsuario','fCliente','fAlbaran','fRefCliente','fFechaDesde','fFechaHasta'].forEach(id=> document.getElementById(id).value='');
-  ['fOrigen','fEstado','fRecogida','fCargoAgencia','fAccion'].forEach(id=> document.getElementById(id).value='');
+  expandedId = null;
+  ['fNum','fUsuario','fCliente','fAlbaran','fRefCliente','fClienteFinal','fFechaDesde','fFechaHasta'].forEach(id=> document.getElementById(id).value='');
+  ['fEmpresa','fOrigen','fEstado','fRecogida','fCargoAgencia','fAccion'].forEach(id=> document.getElementById(id).value='');
   renderConsulta();
 }
 function eliminarIncidencia(id){
@@ -3891,7 +3951,10 @@ function renderConsulta(){
   const cliente = document.getElementById('fCliente').value.trim().toLowerCase();
   const albaran = document.getElementById('fAlbaran').value.trim();
   const refCliente = document.getElementById('fRefCliente').value.trim().toLowerCase();
+  const clienteFinalQ = document.getElementById('fClienteFinal').value.trim().toLowerCase();
+  const empresaQ = document.getElementById('fEmpresa').value;
   const origen = document.getElementById('fOrigen').value;
+  renderFiltrosActivos();
   const estado = document.getElementById('fEstado').value;
   const recogida = document.getElementById('fRecogida').value;
   const cargoAgencia = document.getElementById('fCargoAgencia').value;
@@ -3900,11 +3963,13 @@ function renderConsulta(){
   const hasta = document.getElementById('fFechaHasta').value;
 
   const list = incidencias.filter(inc=>{
+    if(empresaQ && (empresaQ==='__sin__' ? !!inc.empresaGrupo : inc.empresaGrupo!==empresaQ)) return false;
     if(num && !String(inc.id).includes(num)) return false;
     if(usuario && !String(inc.usuario).toLowerCase().includes(usuario)) return false;
     if(cliente && !inc.cliente.nombre.toLowerCase().includes(cliente)) return false;
     if(albaran && !String(inc.albaran ? inc.albaran.numAlbaran : '').includes(albaran)) return false;
     if(refCliente && !refClienteDe(inc).toLowerCase().includes(refCliente)) return false;
+    if(clienteFinalQ && !String(inc.clienteFinal||'').toLowerCase().includes(clienteFinalQ)) return false;
     if(origen && !(inc.origenes||[]).includes(origen)) return false;
     if(estado && inc.estado!==estado) return false;
     if(recogida && !(inc.recogidas||[]).includes(recogida)) return false;
@@ -3921,7 +3986,7 @@ function renderConsulta(){
   document.getElementById('consultaCount').textContent = `${list.length} incidencia(s) de ${incidencias.length}`;
   const tbody = document.getElementById('consultaTbody');
   if(!list.length){
-    tbody.innerHTML = `<tr><td colspan="16"><div class="empty-state">No hay incidencias que coincidan con la búsqueda.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="16"><div class="empty-state">No hay incidencias que coincidan con los filtros aplicados.</div></td></tr>`;
     return;
   }
   const expandedVisible = expandedId!=null && list.some(i=>i.id===expandedId);
@@ -3933,7 +3998,7 @@ function renderConsulta(){
       <td class="mono">#${inc.id}<span class="sub-line" title="Usuario que la creó">👤 ${escapeHtml(inc.usuario)}</span></td>
       <td>${fmtDate(inc.fechaApertura)}</td>
       <td>${fmtDate(inc.fechaComunicacion)}</td>
-      <td class="col-cliente">${escapeHtml(inc.cliente.nombre)}</td>
+      <td class="col-cliente">${inc.empresaGrupo ? `<span class="tag-empresa" title="Empresa">${escapeHtml(inc.empresaGrupo)}</span>` : ''}${escapeHtml(inc.cliente.nombre)}${inc.clienteFinal ? `<span class="sub-line" title="Cliente final">➜ ${escapeHtml(inc.clienteFinal)}</span>` : ''}</td>
       <td class="mono">${inc.albaran ? escapeHtml(String(inc.albaran.numAlbaran)) : '<span class="mod-log">Sin albarán</span>'}${refClienteDe(inc) ? `<span class="sub-line" title="Referencia del cliente">Ref: ${escapeHtml(refClienteDe(inc))}</span>` : ''}</td>
       <td>${origenesChipsHtml(inc.origenes)}</td>
       <td>${estadoPill(inc.estado)}</td>
@@ -4113,10 +4178,12 @@ function cabeceraExcelCols(inc){
     'Fecha apertura': fmtDate(inc.fechaApertura),
     'Fecha comunicación': fmtDate(inc.fechaComunicacion),
     'Usuario': inc.usuario,
+    'Empresa': inc.empresaGrupo || '',
     'Cliente': inc.cliente.nombre,
     'CIF': inc.cliente.cif || '',
     'Nº Albarán': inc.albaran ? inc.albaran.numAlbaran : '',
     'Ref. cliente': refClienteDe(inc),
+    'Cliente final': inc.clienteFinal || '',
     'Orígenes': (inc.origenes||[]).join(', '),
     ...origenesCols,
     'Estado': estadoDesc(inc.estado),
@@ -4132,7 +4199,7 @@ async function ejecutarExportarExcel(modo){
   if(!lastConsultaList.length){ toast('No hay resultados que exportar. Ajusta la búsqueda.', 'error'); return; }
   if(typeof XLSX === 'undefined'){ toast('La librería de exportación aún está cargando, prueba de nuevo en unos segundos.', 'error'); return; }
 
-  const cabeceraColWidths = [{wch:11},{wch:12},{wch:15},{wch:9},{wch:34},{wch:13},{wch:10},{wch:18},{wch:22},{wch:12},{wch:13},{wch:12},{wch:11},{wch:12},{wch:12},{wch:14},{wch:14},{wch:11},{wch:11},{wch:9},{wch:40}];
+  const cabeceraColWidths = [{wch:11},{wch:12},{wch:15},{wch:9},{wch:11},{wch:34},{wch:13},{wch:10},{wch:18},{wch:22},{wch:22},{wch:12},{wch:13},{wch:12},{wch:11},{wch:12},{wch:12},{wch:14},{wch:14},{wch:11},{wch:11},{wch:9},{wch:40}];
   let rows, sheetName, filenameSuffix, colWidths;
 
   if(modo==='lineas'){
@@ -4251,6 +4318,10 @@ function seedExamples(){
 function init(){
   buildCatalogoArticulos();
   document.getElementById('fechaApertura').value = header.fechaApertura;
+  appendOptions(document.getElementById('empresaGrupo'), EMPRESAS_GRUPO, o=>o, o=>o);
+  appendOptions(document.getElementById('fEmpresa'), EMPRESAS_GRUPO, o=>o, o=>o);
+  (function(){ const o=document.createElement('option'); o.value='__sin__'; o.textContent='Sin asignar'; document.getElementById('fEmpresa').appendChild(o); })();
+  initFiltrosConsulta();
   appendOptions(document.getElementById('fOrigen'), APP_DATA.origen, o=>o, o=>o);
   appendOptions(document.getElementById('fEstado'), APP_DATA.estados, e=>e.codigo, e=>e.descripcion);
   appendOptions(document.getElementById('fRecogida'), APP_DATA.recogida, o=>o, o=>o);
