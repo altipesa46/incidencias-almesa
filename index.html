@@ -642,7 +642,7 @@
         <div class="card-body">
           <div class="field-grid">
             <div class="field"><label>Correo (será su usuario de acceso)</label><input type="email" id="uNuevoEmail" autocomplete="off" placeholder="nombre@empresa.com"></div>
-            <div class="field"><label>Contraseña (mín. 6 caracteres)</label><input type="password" id="uNuevoPass" autocomplete="new-password" placeholder="Contraseña inicial"></div>
+            <div class="field"><label>Contraseña (mín. 6 caracteres)</label><div style="display:flex;gap:6px;"><input type="password" id="uNuevoPass" autocomplete="new-password" placeholder="Contraseña inicial" style="flex:1;"><button type="button" class="btn" title="Mostrar / ocultar la contraseña" onclick="verPass('uNuevoPass')">👁</button></div></div>
           </div>
           <div class="toolbar" style="margin-top:16px;">
             <div class="hint">Comunica la contraseña al usuario por un canal seguro. Solo un administrador puede cambiarla desde esta pantalla.</div>
@@ -655,11 +655,11 @@
         <div class="card-head"><h2>Usuarios con acceso</h2><span class="hint" id="usuariosCount"></span></div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Usuario</th><th>Creado</th><th>Último acceso</th><th>Estado</th><th style="width:300px;">Acciones</th></tr></thead>
+            <thead><tr><th>Nombre</th><th>Usuario (correo de acceso)</th><th>Creado</th><th>Último acceso</th><th>Estado</th><th style="width:320px;">Acciones</th></tr></thead>
             <tbody id="usuariosTbody"></tbody>
           </table>
         </div>
-        <div class="card-body"><div class="hint">Desactivar un usuario le impide entrar de nuevo; si ya tenía la app abierta puede seguir trabajando hasta que se renueve su sesión (aprox. 1 hora). Sus incidencias no se borran.</div></div>
+        <div class="card-body"><div class="hint">Por seguridad las contraseñas no se pueden consultar (Supabase solo guarda una huella cifrada): para un usuario que la haya olvidado, usa «Cambiar contraseña» y comunícale la nueva. El nombre es el que aparece como Usuario en las incidencias que cree a partir de ahora; las ya creadas conservan el nombre con el que se guardaron. Desactivar un usuario le impide entrar de nuevo; si ya tenía la app abierta puede seguir trabajando hasta que se renueve su sesión (aprox. 1 hora). Sus incidencias no se borran.</div></div>
       </div>
     </div>
 
@@ -1115,7 +1115,7 @@ async function nubeSalir(){
   clearTimeout(nubeTimer); clearTimeout(nubeReloadTimer);
   nubePend.clear(); nubeSync.clear(); nubeCargada = false; incidencias = [];
   try{ await sb.auth.signOut(); }catch(e){}
-  sbUser = null; esAdmin = false; usuariosLista = []; usuarioEditPw = null; aplicarRolAdmin();
+  sbUser = null; esAdmin = false; usuariosLista = []; usuarioEditPw = null; usuarioEdit = null; aplicarRolAdmin();
 }
 window.addEventListener('beforeunload', e=>{
   if(CLOUD && (nubePend.size || nubeSubiendo)){ e.preventDefault(); e.returnValue = ''; }
@@ -1125,7 +1125,8 @@ window.addEventListener('beforeunload', e=>{
 /* Solo en la versión en la nube y solo para quien figure en la tabla "administradores". Las altas y
    cambios de contraseña los hace la función de servidor "admin-usuarios" (Supabase), que es la única que
    tiene la clave de servicio; la página nunca la ve. Las contraseñas no se guardan ni se muestran. */
-let esAdmin = false, usuariosLista = [], usuarioEditPw = null, usuariosOcupado = false;
+let esAdmin = false, usuariosLista = [], usuarioEditPw = null, usuarioEdit = null, usuariosOcupado = false;
+function verPass(id){ const i = document.getElementById(id); if(i) i.type = (i.type==='password') ? 'text' : 'password'; }
 function aplicarRolAdmin(){
   const b = document.querySelector('.tab-btn[data-tab="usuarios"]');
   if(b) b.hidden = !esAdmin;
@@ -1156,17 +1157,27 @@ function renderUsuarios(){
   tb.innerHTML = usuariosLista.map(u=>{
     const estado = u.desactivado ? '<span class="pill pill-muted">Desactivado</span>' : '<span class="pill pill-ok">Activo</span>';
     const rol = u.admin ? ' <span class="pill pill-info">Admin</span>' : '';
-    let acciones;
-    if(usuarioEditPw === u.id){
-      acciones = `<input type="password" id="uPassEdit" autocomplete="new-password" placeholder="Nueva contraseña (mín. 6)" style="width:170px;"> <button class="btn btn-sm btn-primary" data-ugp="${u.id}">Guardar</button> <button class="btn btn-sm" data-ucancel="1">Cancelar</button>`;
+    let acciones, nombreTd, correoTd;
+    if(usuarioEdit === u.id){
+      nombreTd = `<input type="text" id="uEditNombre" maxlength="40" value="${escapeHtml(u.nombre||'')}" style="width:150px;">`;
+      correoTd = `<input type="email" id="uEditEmail" value="${escapeHtml(u.email||'')}" style="width:230px;" title="Cambiar el correo cambia el usuario con el que entra">`;
+      acciones = `<button class="btn btn-sm btn-primary" data-usave="${u.id}">Guardar</button> <button class="btn btn-sm" data-ucancel="1">Cancelar</button>`;
     } else {
-      acciones = `<button class="btn btn-sm" data-upw="${u.id}">🔑 Cambiar contraseña</button> ` +
-        (u.yo ? '' : (u.desactivado ? `<button class="btn btn-sm" data-uact="${u.id}" data-activo="1">Activar</button>` : `<button class="btn btn-sm btn-danger" data-uact="${u.id}" data-activo="0">Desactivar</button>`));
+      nombreTd = escapeHtml(u.nombre||'—') + (u.yo?' <span class="mod-log">(tú)</span>':'') + rol;
+      correoTd = `<span class="mono">${escapeHtml(u.email||'—')}</span>`;
+      if(usuarioEditPw === u.id){
+        acciones = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><input type="password" id="uPassEdit" autocomplete="new-password" placeholder="Nueva contraseña (mín. 6)" style="width:170px;"><button type="button" class="btn btn-sm" title="Mostrar / ocultar" onclick="verPass('uPassEdit')">👁</button><button class="btn btn-sm btn-primary" data-ugp="${u.id}">Guardar</button><button class="btn btn-sm" data-ucancel="1">Cancelar</button></div>`;
+      } else {
+        acciones = `<button class="btn btn-sm" data-uedit="${u.id}">✏️ Editar</button> <button class="btn btn-sm" data-upw="${u.id}">🔑 Contraseña</button> ` +
+          (u.yo ? '' : (u.desactivado ? `<button class="btn btn-sm" data-uact="${u.id}" data-activo="1">Activar</button>` : `<button class="btn btn-sm btn-danger" data-uact="${u.id}" data-activo="0">Desactivar</button>`));
+      }
     }
-    return `<tr><td class="mono">${escapeHtml(u.email||'—')}${u.yo?' <span class="mod-log">(tú)</span>':''}${rol}</td><td>${fechaHoraES(u.created_at)}</td><td>${fechaHoraES(u.last_sign_in_at)}</td><td>${estado}</td><td>${acciones}</td></tr>`;
-  }).join('') || '<tr><td colspan="5"><div class="empty-state">No hay usuarios.</div></td></tr>';
-  tb.querySelectorAll('[data-upw]').forEach(b=> b.addEventListener('click', ()=>{ usuarioEditPw = b.dataset.upw; renderUsuarios(); const i = document.getElementById('uPassEdit'); if(i) i.focus(); }));
-  tb.querySelectorAll('[data-ucancel]').forEach(b=> b.addEventListener('click', ()=>{ usuarioEditPw = null; renderUsuarios(); }));
+    return `<tr><td>${nombreTd}</td><td>${correoTd}</td><td>${fechaHoraES(u.created_at)}</td><td>${fechaHoraES(u.last_sign_in_at)}</td><td>${estado}</td><td>${acciones}</td></tr>`;
+  }).join('') || '<tr><td colspan="6"><div class="empty-state">No hay usuarios.</div></td></tr>';
+  tb.querySelectorAll('[data-uedit]').forEach(b=> b.addEventListener('click', ()=>{ usuarioEdit = b.dataset.uedit; usuarioEditPw = null; renderUsuarios(); const i = document.getElementById('uEditNombre'); if(i) i.focus(); }));
+  tb.querySelectorAll('[data-usave]').forEach(b=> b.addEventListener('click', ()=> guardarEdicionUsuario(b.dataset.usave)));
+  tb.querySelectorAll('[data-upw]').forEach(b=> b.addEventListener('click', ()=>{ usuarioEditPw = b.dataset.upw; usuarioEdit = null; renderUsuarios(); const i = document.getElementById('uPassEdit'); if(i) i.focus(); }));
+  tb.querySelectorAll('[data-ucancel]').forEach(b=> b.addEventListener('click', ()=>{ usuarioEditPw = null; usuarioEdit = null; renderUsuarios(); }));
   tb.querySelectorAll('[data-ugp]').forEach(b=> b.addEventListener('click', ()=> cambiarPasswordUsuario(b.dataset.ugp)));
   tb.querySelectorAll('[data-uact]').forEach(b=> b.addEventListener('click', ()=> cambiarEstadoUsuario(b.dataset.uact, b.dataset.activo==='1')));
 }
@@ -1185,6 +1196,24 @@ async function crearUsuario(){
     await cargarUsuarios();
   }catch(e){ toast('No se pudo crear el usuario: ' + e.message, 'error'); }
   finally{ usuariosOcupado = false; if(btn) btn.disabled = false; }
+}
+async function guardarEdicionUsuario(id){
+  const u = usuariosLista.find(x=>x.id===id); if(!u) return;
+  const nombre = document.getElementById('uEditNombre').value.trim();
+  const email = document.getElementById('uEditEmail').value.trim().toLowerCase();
+  if(!nombre){ toast('El nombre no puede estar vacío.', 'error'); focusInvalid('uEditNombre'); return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast('Escribe un correo válido.', 'error'); focusInvalid('uEditEmail'); return; }
+  const body = { action:'update', id };
+  if(nombre !== (u.nombre||'')) body.nombre = nombre;
+  if(email !== String(u.email||'').toLowerCase()) body.email = email;
+  if(body.nombre === undefined && body.email === undefined){ usuarioEdit = null; renderUsuarios(); return; }
+  try{
+    await llamarAdminUsuarios(body);
+    usuarioEdit = null;
+    if(u.yo && body.nombre !== undefined){ state.usuario = nombre; const ui = document.getElementById('usuarioInput'); if(ui) ui.value = nombre; }
+    toast('Usuario actualizado.' + (body.email !== undefined ? ' Ahora entra con el correo nuevo.' : ''));
+    await cargarUsuarios();
+  }catch(e){ toast('No se pudo guardar: ' + e.message, 'error'); }
 }
 async function cambiarPasswordUsuario(id){
   const i = document.getElementById('uPassEdit'); const pass = i ? i.value : '';
