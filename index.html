@@ -69,6 +69,7 @@
     border:none;background:transparent;padding:8px 16px;border-radius:8px;cursor:pointer;
     font-weight:600;color:var(--text-muted);font-size:13px;
   }
+  .tab-btn[hidden]{display:none;}
   .tab-btn.active{background:var(--surface);color:var(--accent);box-shadow:var(--shadow);}
   .edit-indicator{display:flex;align-items:center;gap:8px;background:var(--accent-soft);border:1px solid var(--accent-soft-2);padding:4px 6px 4px 12px;border-radius:100px;}
   .userbox{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);}
@@ -410,6 +411,7 @@
         <button class="tab-btn active" data-tab="nueva" onclick="switchTab('nueva')">Nueva incidencia</button>
         <button class="tab-btn" data-tab="consulta" onclick="switchTab('consulta')">Consulta</button>
         <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</button>
+        <button class="tab-btn" data-tab="usuarios" onclick="switchTab('usuarios')" hidden>Usuarios</button>
       </div>
       <div class="edit-indicator" id="editBanner" hidden>
         <span class="pill pill-info">✎ Editando #<span id="editBannerNum"></span></span>
@@ -633,6 +635,34 @@
     </div>
 
     <!-- ================= VISTA: DASHBOARD ================= -->
+    <!-- ================= VISTA: USUARIOS (solo administradores, solo versión en la nube) ================= -->
+    <div class="view" id="view-usuarios">
+      <div class="card">
+        <div class="card-head"><h2>Alta de usuario</h2></div>
+        <div class="card-body">
+          <div class="field-grid">
+            <div class="field"><label>Correo (será su usuario de acceso)</label><input type="email" id="uNuevoEmail" autocomplete="off" placeholder="nombre@empresa.com"></div>
+            <div class="field"><label>Contraseña (mín. 6 caracteres)</label><input type="password" id="uNuevoPass" autocomplete="new-password" placeholder="Contraseña inicial"></div>
+          </div>
+          <div class="toolbar" style="margin-top:16px;">
+            <div class="hint">Comunica la contraseña al usuario por un canal seguro. Solo un administrador puede cambiarla desde esta pantalla.</div>
+            <div class="spacer"></div>
+            <button class="btn btn-primary" id="btnCrearUsuario" onclick="crearUsuario()">➕ Crear usuario</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Usuarios con acceso</h2><span class="hint" id="usuariosCount"></span></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Usuario</th><th>Creado</th><th>Último acceso</th><th>Estado</th><th style="width:300px;">Acciones</th></tr></thead>
+            <tbody id="usuariosTbody"></tbody>
+          </table>
+        </div>
+        <div class="card-body"><div class="hint">Desactivar un usuario le impide entrar de nuevo; si ya tenía la app abierta puede seguir trabajando hasta que se renueve su sesión (aprox. 1 hora). Sus incidencias no se borran.</div></div>
+      </div>
+    </div>
+
     <div class="view" id="view-dashboard">
       <div class="card">
         <div class="card-head">
@@ -1067,6 +1097,8 @@ async function nubeEntrar(session){
       perfil = { nombre };
     }
   }catch(e){ /* sin perfil seguimos con el correo */ }
+  try{ const ra = await sb.from('administradores').select('user_id').eq('user_id', sbUser.id).maybeSingle(); esAdmin = !!(ra && ra.data); }catch(e){ esAdmin = false; }
+  aplicarRolAdmin();
   state.usuario = (perfil && (perfil.codigo_corto || perfil.nombre)) || (sbUser.email||'').split('@')[0] || '—';
   const ui = document.getElementById('usuarioInput');
   if(ui){ ui.value = state.usuario; ui.readOnly = true; ui.maxLength = 40; ui.title = sbUser.email || ''; ui.style.width = Math.max(60, Math.min(160, state.usuario.length*9+24)) + 'px'; }
@@ -1083,11 +1115,91 @@ async function nubeSalir(){
   clearTimeout(nubeTimer); clearTimeout(nubeReloadTimer);
   nubePend.clear(); nubeSync.clear(); nubeCargada = false; incidencias = [];
   try{ await sb.auth.signOut(); }catch(e){}
-  sbUser = null;
+  sbUser = null; esAdmin = false; usuariosLista = []; usuarioEditPw = null; aplicarRolAdmin();
 }
 window.addEventListener('beforeunload', e=>{
   if(CLOUD && (nubePend.size || nubeSubiendo)){ e.preventDefault(); e.returnValue = ''; }
 });
+
+/* ================= ADMINISTRACIÓN DE USUARIOS ================= */
+/* Solo en la versión en la nube y solo para quien figure en la tabla "administradores". Las altas y
+   cambios de contraseña los hace la función de servidor "admin-usuarios" (Supabase), que es la única que
+   tiene la clave de servicio; la página nunca la ve. Las contraseñas no se guardan ni se muestran. */
+let esAdmin = false, usuariosLista = [], usuarioEditPw = null, usuariosOcupado = false;
+function aplicarRolAdmin(){
+  const b = document.querySelector('.tab-btn[data-tab="usuarios"]');
+  if(b) b.hidden = !esAdmin;
+  const v = document.getElementById('view-usuarios');
+  if(!esAdmin && v && v.classList.contains('active')) switchTab('nueva');
+}
+async function llamarAdminUsuarios(body){
+  const r = await sb.functions.invoke('admin-usuarios', { body });
+  if(r.error){
+    let m = r.error.message || 'Error al contactar con el servidor';
+    try{ const j = await r.error.context.json(); if(j && j.error) m = j.error; }catch(e){}
+    throw new Error(m);
+  }
+  if(r.data && r.data.error) throw new Error(r.data.error);
+  return r.data;
+}
+async function cargarUsuarios(){
+  if(!CLOUD || !esAdmin) return;
+  try{ const r = await llamarAdminUsuarios({ action:'list' }); usuariosLista = r.users || []; }
+  catch(e){ toast('No se pudo cargar la lista de usuarios: ' + e.message, 'error'); }
+  renderUsuarios();
+}
+function fechaHoraES(iso){ if(!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleString('es-ES', { dateStyle:'short', timeStyle:'short' }); }
+function renderUsuarios(){
+  const tb = document.getElementById('usuariosTbody');
+  if(!tb) return;
+  document.getElementById('usuariosCount').textContent = `${usuariosLista.length} usuario(s)`;
+  tb.innerHTML = usuariosLista.map(u=>{
+    const estado = u.desactivado ? '<span class="pill pill-muted">Desactivado</span>' : '<span class="pill pill-ok">Activo</span>';
+    const rol = u.admin ? ' <span class="pill pill-info">Admin</span>' : '';
+    let acciones;
+    if(usuarioEditPw === u.id){
+      acciones = `<input type="password" id="uPassEdit" autocomplete="new-password" placeholder="Nueva contraseña (mín. 6)" style="width:170px;"> <button class="btn btn-sm btn-primary" data-ugp="${u.id}">Guardar</button> <button class="btn btn-sm" data-ucancel="1">Cancelar</button>`;
+    } else {
+      acciones = `<button class="btn btn-sm" data-upw="${u.id}">🔑 Cambiar contraseña</button> ` +
+        (u.yo ? '' : (u.desactivado ? `<button class="btn btn-sm" data-uact="${u.id}" data-activo="1">Activar</button>` : `<button class="btn btn-sm btn-danger" data-uact="${u.id}" data-activo="0">Desactivar</button>`));
+    }
+    return `<tr><td class="mono">${escapeHtml(u.email||'—')}${u.yo?' <span class="mod-log">(tú)</span>':''}${rol}</td><td>${fechaHoraES(u.created_at)}</td><td>${fechaHoraES(u.last_sign_in_at)}</td><td>${estado}</td><td>${acciones}</td></tr>`;
+  }).join('') || '<tr><td colspan="5"><div class="empty-state">No hay usuarios.</div></td></tr>';
+  tb.querySelectorAll('[data-upw]').forEach(b=> b.addEventListener('click', ()=>{ usuarioEditPw = b.dataset.upw; renderUsuarios(); const i = document.getElementById('uPassEdit'); if(i) i.focus(); }));
+  tb.querySelectorAll('[data-ucancel]').forEach(b=> b.addEventListener('click', ()=>{ usuarioEditPw = null; renderUsuarios(); }));
+  tb.querySelectorAll('[data-ugp]').forEach(b=> b.addEventListener('click', ()=> cambiarPasswordUsuario(b.dataset.ugp)));
+  tb.querySelectorAll('[data-uact]').forEach(b=> b.addEventListener('click', ()=> cambiarEstadoUsuario(b.dataset.uact, b.dataset.activo==='1')));
+}
+async function crearUsuario(){
+  if(usuariosOcupado) return;
+  const email = document.getElementById('uNuevoEmail').value.trim();
+  const pass = document.getElementById('uNuevoPass').value;
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast('Escribe un correo válido.', 'error'); focusInvalid('uNuevoEmail'); return; }
+  if(pass.length < 6){ toast('La contraseña debe tener al menos 6 caracteres.', 'error'); focusInvalid('uNuevoPass'); return; }
+  usuariosOcupado = true;
+  const btn = document.getElementById('btnCrearUsuario'); if(btn) btn.disabled = true;
+  try{
+    await llamarAdminUsuarios({ action:'create', email, password: pass });
+    document.getElementById('uNuevoEmail').value = ''; document.getElementById('uNuevoPass').value = '';
+    toast(`Usuario ${email.toLowerCase()} creado. Ya puede entrar en la app.`);
+    await cargarUsuarios();
+  }catch(e){ toast('No se pudo crear el usuario: ' + e.message, 'error'); }
+  finally{ usuariosOcupado = false; if(btn) btn.disabled = false; }
+}
+async function cambiarPasswordUsuario(id){
+  const i = document.getElementById('uPassEdit'); const pass = i ? i.value : '';
+  if(pass.length < 6){ toast('La contraseña debe tener al menos 6 caracteres.', 'error'); if(i) i.focus(); return; }
+  try{ await llamarAdminUsuarios({ action:'setPassword', id, password: pass }); usuarioEditPw = null; toast('Contraseña cambiada.'); renderUsuarios(); }
+  catch(e){ toast('No se pudo cambiar la contraseña: ' + e.message, 'error'); }
+}
+function cambiarEstadoUsuario(id, activar){
+  const u = usuariosLista.find(x=>x.id===id); if(!u) return;
+  const hacer = async ()=>{
+    try{ await llamarAdminUsuarios({ action:'setActive', id, active: activar }); toast(`Usuario ${u.email} ${activar?'activado':'desactivado'}.`); await cargarUsuarios(); }
+    catch(e){ toast('No se pudo cambiar el estado: ' + e.message, 'error'); }
+  };
+  if(activar) hacer(); else confirmDialog(`¿Desactivar a ${u.email}? No podrá volver a entrar en la app.`, hacer);
+}
 
 /* ================= LOGIN ================= */
 /* Pantalla de acceso: valida usuario/contraseña contra APP_DATA.usuarios (hoja "usuarios" del Excel
@@ -1481,10 +1593,13 @@ function appendOptions(sel, items, valueFn, labelFn){
 
 /* ================= TABS ================= */
 function switchTab(tab){
+  if(tab==='usuarios' && !esAdmin) tab = 'nueva';
   document.querySelectorAll('.tab-btn').forEach(b=> b.classList.toggle('active', b.dataset.tab===tab));
   document.getElementById('view-nueva').classList.toggle('active', tab==='nueva');
   document.getElementById('view-consulta').classList.toggle('active', tab==='consulta');
   document.getElementById('view-dashboard').classList.toggle('active', tab==='dashboard');
+  document.getElementById('view-usuarios').classList.toggle('active', tab==='usuarios');
+  if(tab==='usuarios') cargarUsuarios();
   if(tab==='consulta') renderConsulta();
   if(tab==='dashboard') renderDashboard();
 }
