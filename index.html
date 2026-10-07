@@ -1338,7 +1338,7 @@ const RECEPCION_AVISOS = [
   'Sube fotos del producto dañado.',
   'Guarda el producto hasta nuevo aviso.'
 ];
-/* Misma condición que updateRecepcionBoxVisibility() en el modal de detalle de línea: el aviso de
+/* Misma condición que los avisos de texto de updateRecepcionBoxVisibility() (variable showAvisos) en el modal de detalle de línea: el aviso de
    recepción (en Consulta, en modo solo lectura) solo tiene sentido mientras la recogida está
    Notificada — si no hay recogida en curso ("No Recoger" o "Recogida entregada") no hay nada que
    comprobar todavía, aunque la línea tenga cargo a la agencia marcado. */
@@ -2732,42 +2732,54 @@ function wireLineaModalEvents(l){
     document.getElementById('ld_cargoAgenciaDocsBox').hidden = cargoAgenciaVal !== 'Sí';
   }
   function updateRecepcionBoxVisibility(){
-    // Este bloque tiene dos variantes según el Origen de la línea, ambas activas solo con la
-    // línea Notificada recogida:
-    // - Origen=Agencia (con Cargo a la agencia=Sí): aviso completo, con el formulario de daño
-    //   (parte dañada, % deterioro, importe a facturar a la agencia, foto del defecto), porque en
-    //   este caso es Almesa quien factura directamente el desperfecto a la agencia de transporte.
+    // Este bloque tiene dos variantes según el Origen de la línea:
+    // - Origen=Agencia con Cargo a la agencia=Sí: se muestra EN CUANTO se marca el cargo (sin esperar a
+    //   que la recogida esté Notificada): pregunta "¿tiene daño?" y, si es Sí, el formulario de daño
+    //   (partes dañadas, % deterioro, MOD, LOTT, importe a facturar a la agencia, fotos), porque aquí es
+    //   Almesa quien factura directamente el desperfecto a la agencia de transporte. Los avisos de texto
+    //   de recepción (revisar bultos, guardar el producto…) solo salen con la recogida Notificada.
     // - Origen=Cliente: solo el aviso de texto (revisar bultos y posible daño), sin formulario ni
-    //   importe, para que el empleado avise al cliente de que reclame el daño directamente a la
-    //   agencia de transporte (aquí Almesa no le factura nada a la agencia).
+    //   importe, y solo con la recogida Notificada: el empleado avisa al cliente de que reclame el
+    //   daño directamente a la agencia de transporte (aquí Almesa no le factura nada a la agencia).
     // - Origen=Empresa: nunca se muestra este bloque. Con Empresa se tiene una tarifa de recogida
     //   propia que no admite cargos por daño, así que evaluar el desperfecto no aporta nada.
     const origenVal = document.getElementById('ld_origen').value;
     const recogidaVal = document.getElementById('ld_recogida').value;
     const cargoAgenciaVal = document.getElementById('ld_cargoAgencia').value;
     const notificadaRecogida = recogidaVal === 'Notificada recogida';
-    const showFull = notificadaRecogida && origenVal === 'Agencia' && cargoAgenciaVal === 'Sí';
+    const showFull = origenVal === 'Agencia' && cargoAgenciaVal === 'Sí';
     const showWarningOnly = notificadaRecogida && origenVal === 'Cliente';
+    const showAvisos = showWarningOnly || (showFull && notificadaRecogida);
     const show = showFull || showWarningOnly;
     document.getElementById('ld_recepcionBox').hidden = !show;
-    document.getElementById('ld_recepcionWarning').hidden = !show;
+    document.getElementById('ld_recepcionWarning').hidden = !showAvisos;
     document.getElementById('ld_recepcionWarningCliente').hidden = !showWarningOnly;
     document.getElementById('ld_danoPregunta').hidden = !showFull;
     if(!showFull){
-      // Si se deja de mostrar el formulario de daño (p.ej. porque el origen deja de ser Agencia),
-      // no queremos que una selección previa de "¿tiene daño?" se guarde de forma invisible al
-      // pulsar Guardar más tarde: se limpia la selección junto con el resto del formulario.
+      // Si se deja de mostrar el formulario de daño (p.ej. porque el origen deja de ser Agencia o el
+      // cargo pasa a No), no queremos que una selección previa de "¿tiene daño?" se guarde de forma
+      // invisible al pulsar Guardar más tarde: se limpia la selección junto con el resto del formulario.
       const tieneDanoChecked = document.querySelector('input[name="ld_tieneDano"]:checked');
       if(tieneDanoChecked) tieneDanoChecked.checked = false;
     }
     updateDanoVisibility();
   }
+  function desplegarCalculoCargo(){
+    // Al marcar el cargo a la agencia = Sí el usuario espera ver ya las líneas de cálculo: se preselecciona
+    // "Sí" en "¿tiene daño?" (puede cambiarlo a No). Solo se hace al cambiar el campo, no al abrir una
+    // línea ya guardada, para no modificar datos existentes sin que el usuario toque nada.
+    if(document.getElementById('ld_danoPregunta').hidden) return;
+    if(!document.querySelector('input[name="ld_tieneDano"]:checked')){
+      document.getElementById('ld_tieneDanoSi').checked = true;
+      updateDanoVisibility();
+    }
+  }
   updateCargoAgenciaVisibility();
   updateCargoAgenciaDocsVisibility();
   updateRecepcionBoxVisibility();
-  document.getElementById('ld_origen').addEventListener('change', ()=>{ updateCargoAgenciaVisibility(); updateCargoAgenciaDocsVisibility(); updateRecepcionBoxVisibility(); });
+  document.getElementById('ld_origen').addEventListener('change', ()=>{ updateCargoAgenciaVisibility(); updateCargoAgenciaDocsVisibility(); updateRecepcionBoxVisibility(); desplegarCalculoCargo(); });
   document.getElementById('ld_recogida').addEventListener('change', updateRecepcionBoxVisibility);
-  document.getElementById('ld_cargoAgencia').addEventListener('change', ()=>{ updateCargoAgenciaDocsVisibility(); updateRecepcionBoxVisibility(); });
+  document.getElementById('ld_cargoAgencia').addEventListener('change', ()=>{ updateCargoAgenciaDocsVisibility(); updateRecepcionBoxVisibility(); desplegarCalculoCargo(); });
 
   document.getElementById('ld_dzDefecto').addEventListener('click', ()=> document.getElementById('ld_fileDefecto').click());
   document.getElementById('ld_fileDefecto').addEventListener('change', function(){
