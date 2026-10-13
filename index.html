@@ -1149,7 +1149,8 @@ var CLOUD = (function(){
 <script>
 /* ================= ESTADO GLOBAL ================= */
 let state = { usuario: '204' };
-let header = emptyHeader();
+let autoRefCliente = '', autoClienteFinal = '';   // valores de Ref. cliente / Cliente final puestos automáticamente por el albarán elegido
+let header = emptyHeader(); autoRefCliente = autoClienteFinal = '';
 let lineas = [];
 var incidencias = []; // var (not let): must be a real window property so a tab opened via window.open()
                        // can read/share it live through window.opener.incidencias
@@ -2255,7 +2256,7 @@ async function dsBuscarAlbaranes(q){
   const ql = q.toLowerCase();
   const lista = (r.data||[]).filter(x=> numEmp == null || Number(x.empresa) === numEmp).map(x=>{
     const a = { key:`${x.empresa}-${x.ejercicio}-${x.serie}-${x.numero}`, empresa:x.empresa, ejercicio:x.ejercicio, serie:x.serie, numero:x.numero,
-      numAlbaran:`${x.serie}/${x.numero}`, numFactura:x.numfactura, fecha:x.fecha, codCliente:String(x.codcliente), cliente:x.cliente||'', referenciaCliente:x.referenciacliente||'' };
+      numAlbaran:`${x.serie}/${x.numero}`, numFactura:x.numfactura, fecha:x.fecha, codCliente:String(x.codcliente), cliente:x.cliente||'', referenciaCliente:x.supedido||x.referenciacliente||'', razonSocialEnvio:x.razonsocialenvio||'' };
     // Solo se ofrece "cargar solo esta referencia" si la búsqueda NO coincide con el nº de albarán ni con el cliente.
     const porNumeroOCliente = ql && (a.numAlbaran.toLowerCase().includes(ql) || String(x.numero).includes(ql) || a.cliente.toLowerCase().includes(ql) || (a.referenciaCliente||'').toLowerCase().includes(ql));
     a._articuloMatch = (ql && !porNumeroOCliente && x.articulo_cod) ? { codArticulo:x.articulo_cod, descripcion:x.articulo_desc||'' } : null;
@@ -2336,6 +2337,16 @@ async function _renderAlbaranResults(q){
     row.addEventListener('click', ()=> selectAlbaran(a, a._articuloMatch ? String(a._articuloMatch.codArticulo) : null));
   });
 }
+/* Al elegir un albarán se rellenan solos «Ref. cliente» (SuPedido) y «Cliente final» (RazonSocialEnvio).
+   Si el usuario ya había escrito otro valor a mano, se respeta; si el valor venía del albarán anterior, se sustituye por el del nuevo. */
+function aplicarDatosAlbaran(a){
+  const ref = String((a && a.referenciaCliente) || '').trim().slice(0,30);
+  const cf = String((a && a.razonSocialEnvio) || '').trim().slice(0,30);
+  const curRef = String(header.referenciaCliente || '').trim();
+  const curCf = String(header.clienteFinal || '').trim();
+  if(!curRef || curRef === autoRefCliente){ header.referenciaCliente = ref; autoRefCliente = ref; }
+  if(!curCf || curCf === autoClienteFinal){ header.clienteFinal = cf; autoClienteFinal = cf; }
+}
 async function selectAlbaran(a, soloArticuloCod){
   if(!a) return;
   let raw;
@@ -2348,7 +2359,7 @@ async function selectAlbaran(a, soloArticuloCod){
     header.cliente = { empresa:a.empresa, cod:a.codCliente, nombre:a.cliente, cif:a.cif||'' };
   }
   lineas = mergeLineasRaw(raw, soloArticuloCod || null).map(makeLinea);
-  if(a.referenciaCliente && !String(header.referenciaCliente||'').trim()){ header.referenciaCliente = String(a.referenciaCliente).slice(0,30); }
+  aplicarDatosAlbaran(a);
   closeModal('modalAlbaran');
   renderAll();
   if(soloArticuloCod){
@@ -3605,7 +3616,7 @@ async function guardarIncidencia(){
     toast(`Incidencia #${inc.id} actualizada.`);
     const savedId = inc.id;
     editingId = null; editingVersion = null;
-    header = emptyHeader(); lineas = [];
+    header = emptyHeader(); autoRefCliente = autoClienteFinal = ''; lineas = [];
     renderAll();
     expandedId = savedId;
     switchTab('consulta');
@@ -3656,7 +3667,7 @@ async function guardarIncidencia(){
 function editarIncidencia(id){
   const inc = incidencias.find(i=>i.id===id);
   if(!inc) return;
-  editingId = id;
+  editingId = id; autoRefCliente = autoClienteFinal = '';
   editingVersion = inc.version == null ? null : inc.version;
   header = {
     fechaApertura: inc.fechaApertura,
@@ -3680,7 +3691,7 @@ function cancelarFormulario(){
   confirmDialog('¿Cancelar? Se perderán los datos no guardados de este formulario y volverás a Consulta.', ()=>{
     const volverAId = editingId;
     editingId = null;
-    header = emptyHeader();
+    header = emptyHeader(); autoRefCliente = autoClienteFinal = '';
     lineas = [];
     resetSeccionesColapsables();
     renderAll();
@@ -3692,7 +3703,7 @@ function cancelarEdicion(){
   confirmDialog('¿Cancelar la edición? Se perderán los cambios no guardados en esta incidencia.', ()=>{
     const volverAId = editingId;
     editingId = null;
-    header = emptyHeader();
+    header = emptyHeader(); autoRefCliente = autoClienteFinal = '';
     lineas = [];
     resetSeccionesColapsables();
     renderAll();
@@ -3704,7 +3715,7 @@ function resetForm(confirmFirst){
   if(confirmFirst){
     confirmDialog('¿Vaciar el formulario? Se perderán los datos no guardados.', ()=>{
       editingId = null;
-      header = emptyHeader();
+      header = emptyHeader(); autoRefCliente = autoClienteFinal = '';
       lineas = [];
       resetSeccionesColapsables();
       renderAll();
@@ -3712,7 +3723,7 @@ function resetForm(confirmFirst){
     return;
   }
   editingId = null;
-  header = emptyHeader();
+  header = emptyHeader(); autoRefCliente = autoClienteFinal = '';
   lineas = [];
   resetSeccionesColapsables();
   renderAll();
@@ -4860,7 +4871,7 @@ function eliminarIncidencia(id){
     }
     incidencias = incidencias.filter(i=>i.id!==id);
     if(expandedId===id) expandedId = null;
-    if(editingId===id){ editingId = null; header = emptyHeader(); lineas = []; renderAll(); }
+    if(editingId===id){ editingId = null; header = emptyHeader(); autoRefCliente = autoClienteFinal = ''; lineas = []; renderAll(); }
     persistIncidencias();
     renderConsulta();
     toast(`Incidencia #${id} eliminada.`);
