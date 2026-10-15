@@ -243,6 +243,9 @@
   .comunicado-contacto{display:flex;flex-wrap:wrap;gap:16px 20px;justify-content:flex-start;}
   .comunicado-contacto .field:first-child{flex:0 1 25%;min-width:220px;}
   .comunicado-contacto .field:nth-child(2){flex:0 1 25%;min-width:180px;}
+  .comunicado-contacto #numExpedicionBox{flex:0 1 25%;min-width:180px;}
+  .comunicado-contacto .field.dir-rec{flex:0 1 calc(75% + 40px);min-width:320px;}
+  .comunicado-contacto .field.dir-rec textarea{min-height:44px;resize:vertical;}
   .btn-obs{width:100%;justify-content:space-between;background:#fff;padding:0 11px;font-weight:500;height:44px;white-space:nowrap;}
   .btn-obs.con-texto{border-color:var(--accent);color:var(--accent);}
   .field{display:flex;flex-direction:column;gap:6px;min-width:0;}
@@ -743,6 +746,8 @@
           <div class="comunicado-contacto">
             <div class="field"><label>Persona de contacto <span class="mod-log">(máx. 60)</span></label><input type="text" id="personaContacto" maxlength="60" placeholder="Quién atenderá a la agencia" oninput="header.personaContacto=this.value"></div>
             <div class="field"><label>Teléfono de contacto <span class="mod-log">(máx. 20)</span></label><input type="tel" id="telefonoContacto" maxlength="20" placeholder="Teléfono" oninput="header.telefonoContacto=this.value"></div>
+            <div class="field" id="numExpedicionBox"><label>Nº de expedición <span class="req">*</span> <span class="mod-log">(cargo a la agencia)</span></label><input type="text" id="numExpedicion" inputmode="numeric" maxlength="20" placeholder="Solo números" oninput="this.value=this.value.replace(/\D/g,''); header.numExpedicion=this.value"></div>
+            <div class="field dir-rec"><label>Dirección de recogida <span class="mod-log">(si se deja vacía, la del albarán)</span></label><textarea id="direccionRecogida" rows="2" maxlength="250" placeholder="" oninput="header.direccionRecogida=this.value"></textarea></div>
           </div>
           <div data-rec-lm hidden style="margin-top:12px;">
             <div class="field-grid">
@@ -1234,14 +1239,14 @@ function incARemoto(inc){
     usuario: inc.usuario, fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion,
     origenes: (inc.origenes||[]).slice(), cliente: inc.cliente, albaran: inc.albaran || null,
     manualEnEspera: !!inc.manualEnEspera, estado: inc.estado, recogida: inc.recogida || null, recogidas: (inc.recogidas||[]).slice(),
-    cargoAgencia: inc.cargoAgencia || null, observaciones: inc.observaciones || '', referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', empresaGrupo: inc.empresaGrupo || '',
+    cargoAgencia: inc.cargoAgencia || null, observaciones: inc.observaciones || '', referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', numExpedicion: inc.numExpedicion || '', direccionRecogida: inc.direccionRecogida || '', empresaGrupo: inc.empresaGrupo || '',
     accionesRealizar: acciones, comunicacionCliente: archivosRemotos(inc.comunicacionCliente), documentos: archivosRemotos(inc.documentos),
     historial: inc.historial || []
   };
   const alb = inc.albaran;
   return {
     fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion, estado: inc.estado,
-    cargoAgencia: inc.cargoAgencia || null, manualEnEspera: !!inc.manualEnEspera, observaciones: inc.observaciones || '', referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', empresaGrupo: inc.empresaGrupo || '',
+    cargoAgencia: inc.cargoAgencia || null, manualEnEspera: !!inc.manualEnEspera, observaciones: inc.observaciones || '', referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', numExpedicion: inc.numExpedicion || '', direccionRecogida: inc.direccionRecogida || '', empresaGrupo: inc.empresaGrupo || '',
     cliente: { empresa: inc.cliente && inc.cliente.empresa != null ? inc.cliente.empresa : 1, cod: String(inc.cliente.cod) },
     albaran: alb ? { empresa: alb.empresa, ejercicio: alb.ejercicio, serie: alb.serie, numero: alb.numero } : null,
     datos, lineas: lin, accionesRealizar: acciones
@@ -1665,7 +1670,7 @@ if(!CLOUD) comprobarSesionGuardada();
 
 function emptyHeader(){
   return { fechaApertura: todayISO(), fechaComunicacion:'', cliente:null, albaran:null,
-    manualEnEspera:false, comunicacionCliente:[], documentos:[], accionesRealizar:[], observaciones:'', referenciaCliente:'', clienteFinal:'', empresaGrupo:'', personaContacto:'', telefonoContacto:'' };
+    manualEnEspera:false, comunicacionCliente:[], documentos:[], accionesRealizar:[], observaciones:'', referenciaCliente:'', clienteFinal:'', empresaGrupo:'', personaContacto:'', telefonoContacto:'', numExpedicion:'', direccionRecogida:'' };
 }
 const ACCIONES_INCIDENCIA = [
   { cod:'reposicion', desc:'Reposición' },
@@ -2226,6 +2231,17 @@ async function dsBuscarClientes(q){
   const lista = (r.data||[]).filter(c=> numEmp == null || Number(c.empresa) === numEmp).map(c=>({ empresa:c.empresa, cod:String(c.cod), nombre:c.nombre||'(sin nombre)', cif:'', ubicacion:[c.municipio,c.provincia].filter(Boolean).join(' · ') }));
   return { lista, total: lista.length };
 }
+/* Dirección de entrega del albarán (= dirección de recogida del comunicado). La búsqueda devuelve la fila completa de
+   albaranes_cabecera (x.fila). Columnas usadas: domicilioenvios, domicilio2envios, codigopostalenvios, municipioenvios,
+   provinciaenvios y telefonoenvios (codigoprovinciaenvios es solo el código y no se escribe). */
+function direccionDeFila(fila){
+  if(!fila || typeof fila !== 'object') return '';
+  const v = k => { const x = fila[k]; return x == null ? '' : String(x).trim(); };
+  const pob = v('municipioenvios'), prov = v('provinciaenvios');
+  const ciudad = [v('codigopostalenvios'), pob].filter(Boolean).join(' ') + (prov && prov.toLowerCase() !== pob.toLowerCase() ? (pob || v('codigopostalenvios') ? ` (${prov})` : prov) : '');
+  const tel = v('telefonoenvios');
+  return [v('domicilioenvios'), v('domicilio2envios'), ciudad, tel ? `Tel.: ${tel}` : ''].filter(Boolean).join('\n');
+}
 async function dsBuscarAlbaranes(q){
   q = (q||'').trim();
   if(!CLOUD){
@@ -2256,7 +2272,7 @@ async function dsBuscarAlbaranes(q){
   const ql = q.toLowerCase();
   const lista = (r.data||[]).filter(x=> numEmp == null || Number(x.empresa) === numEmp).map(x=>{
     const a = { key:`${x.empresa}-${x.ejercicio}-${x.serie}-${x.numero}`, empresa:x.empresa, ejercicio:x.ejercicio, serie:x.serie, numero:x.numero,
-      numAlbaran:`${x.serie}/${x.numero}`, numFactura:x.numfactura, fecha:x.fecha, codCliente:String(x.codcliente), cliente:x.cliente||'', referenciaCliente:x.supedido||x.referenciacliente||'', razonSocialEnvio:x.razonsocialenvio||'' };
+      numAlbaran:`${x.serie}/${x.numero}`, numFactura:x.numfactura, fecha:x.fecha, codCliente:String(x.codcliente), cliente:x.cliente||'', referenciaCliente:x.supedido||x.referenciacliente||'', razonSocialEnvio:x.razonsocialenvio||'', direccionEntrega:direccionDeFila(x.fila) };
     // Solo se ofrece "cargar solo esta referencia" si la búsqueda NO coincide con el nº de albarán ni con el cliente.
     const porNumeroOCliente = ql && (a.numAlbaran.toLowerCase().includes(ql) || String(x.numero).includes(ql) || a.cliente.toLowerCase().includes(ql) || (a.referenciaCliente||'').toLowerCase().includes(ql));
     a._articuloMatch = (ql && !porNumeroOCliente && x.articulo_cod) ? { codArticulo:x.articulo_cod, descripcion:x.articulo_desc||'' } : null;
@@ -3247,6 +3263,8 @@ function diffCambiosIncidencia(before, after){
   if((before.empresaGrupo||'') !== (after.empresaGrupo||'')) cambios.push(`Empresa: ${before.empresaGrupo||'—'} → ${after.empresaGrupo||'—'}`);
   if((before.personaContacto||'') !== (after.personaContacto||'')) cambios.push(`Persona de contacto (recogida): ${before.personaContacto||'—'} → ${after.personaContacto||'—'}`);
   if((before.telefonoContacto||'') !== (after.telefonoContacto||'')) cambios.push(`Teléfono de contacto (recogida): ${before.telefonoContacto||'—'} → ${after.telefonoContacto||'—'}`);
+  if((before.numExpedicion||'') !== (after.numExpedicion||'')) cambios.push(`Nº de expedición: ${before.numExpedicion||'—'} → ${after.numExpedicion||'—'}`);
+  if((before.direccionRecogida||'') !== (after.direccionRecogida||'')) cambios.push(`Dirección de recogida: ${before.direccionRecogida||'—'} → ${after.direccionRecogida||'—'}`);
   if((before.clienteFinal||'') !== (after.clienteFinal||'')) cambios.push(`Cliente final: ${before.clienteFinal||'—'} → ${after.clienteFinal||'—'}`);
   if((before.observaciones||'') !== (after.observaciones||'')) cambios.push(`Observaciones de cabecera modificadas`);
   const beforeIds = new Set(before.lineas.map(l=>l.id));
@@ -3440,7 +3458,7 @@ function persistIncidencias(){
       id: inc.id, usuario: inc.usuario, fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion,
       origenes: (inc.origenes||[]).slice(), cliente: inc.cliente, albaran: inc.albaran, manualEnEspera: inc.manualEnEspera,
       estado: inc.estado, recogida: inc.recogida || null, cargoAgencia: inc.cargoAgencia || null,
-      accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar), referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', empresaGrupo: inc.empresaGrupo || '', observaciones: inc.observaciones || '',
+      accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar), referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', numExpedicion: inc.numExpedicion || '', direccionRecogida: inc.direccionRecogida || '', empresaGrupo: inc.empresaGrupo || '', observaciones: inc.observaciones || '',
       comunicacionCliente: (inc.comunicacionCliente||[]).map(f=>({name:f.name,size:f.size})),
       documentos: (inc.documentos||[]).map(f=>({name:f.name,size:f.size})),
       lineas: (inc.lineas||[]).map(l=>({
@@ -3520,6 +3538,7 @@ function validarCabecera(){
   if(!header.fechaComunicacion) errors.push({msg:'Indica la fecha de comunicación del cliente.', fieldId:'fechaComunicacion'});
   const activasVal = lineas.filter(l=>!l.eliminada);
   if(!activasVal.length) errors.push({msg:'Debe quedar al menos una línea (del albarán o añadida manualmente).', fieldId:null});
+  if(lineasConCargoAgencia(activasVal).length && !String(header.numExpedicion||'').replace(/\D/g,'')) errors.push({msg:'Indica el nº de expedición (apartado «Comunicado de recogida a la agencia»): hay líneas con cargo a la agencia.', fieldId:'numExpedicion'});
   const sinOrigen = activasVal.filter(l=>!l.origen);
   if(sinOrigen.length) errors.push({msg:`Indica el Origen en cada línea (edítala) — falta en: ${sinOrigen.map(l=>l.codArticulo).join(', ')}.`, fieldId:null});
   // Dos comprobaciones distintas sobre el mismo albarán + artículo, mirando otras incidencias ya
@@ -3598,6 +3617,8 @@ async function guardarIncidencia(){
     t.clienteFinal = (header.clienteFinal || '').trim().slice(0,30);
     t.personaContacto = (header.personaContacto || '').trim().slice(0,60);
     t.telefonoContacto = (header.telefonoContacto || '').trim().slice(0,20);
+    t.numExpedicion = String(header.numExpedicion || '').replace(/\D/g,'').slice(0,20);
+    t.direccionRecogida = (header.direccionRecogida || '').trim().slice(0,250);
     t.empresaGrupo = header.empresaGrupo || '';
     t.lineas = activas.map(l=> Object.assign({}, l, {marcada:false}));
     t.estado = computeHeaderEstado(activas, header.manualEnEspera);
@@ -3639,6 +3660,8 @@ async function guardarIncidencia(){
     clienteFinal: (header.clienteFinal || '').trim().slice(0,30),
     personaContacto: (header.personaContacto || '').trim().slice(0,60),
     telefonoContacto: (header.telefonoContacto || '').trim().slice(0,20),
+    numExpedicion: String(header.numExpedicion || '').replace(/\D/g,'').slice(0,20),
+    direccionRecogida: (header.direccionRecogida || '').trim().slice(0,250),
     empresaGrupo: header.empresaGrupo || '',
     lineas: activas.map(l=> Object.assign({}, l, {marcada:false})),
     recogida: computeHeaderRecogida(activas),
@@ -3678,7 +3701,7 @@ function editarIncidencia(id){
     comunicacionCliente: inc.comunicacionCliente.map(f=> Object.assign({}, f)),
     documentos: inc.documentos.map(f=> Object.assign({}, f)),
     accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar),
-    referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', empresaGrupo: inc.empresaGrupo || '',
+    referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', numExpedicion: inc.numExpedicion || '', direccionRecogida: inc.direccionRecogida || '', empresaGrupo: inc.empresaGrupo || '',
     observaciones: inc.observaciones || ''
   };
   lineas = inc.lineas.map(l=> Object.assign({}, l, { marcada:false, adjuntos:(l.adjuntos||[]).map(a=> Object.assign({}, a)) }));
@@ -4478,10 +4501,25 @@ function docxTablaProductos(filas){
   const fila = (cols, esCab)=> `<w:tr><w:trPr><w:cantSplit/></w:trPr>${cols.map((c,i)=>docxCelda(c, anchos[i], esCab)).join('')}</w:tr>`;
   return `<w:tbl><w:tblPr><w:tblW w:w="${anchos.reduce((a,b)=>a+b,0)}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${anchos.map(a=>`<w:gridCol w:w="${a}"/>`).join('')}</w:tblGrid>${fila(cab,true)}${filas.map(f=>fila(f,false)).join('')}</w:tbl>`;
 }
+function docxParrafoCampo(etiqueta, valor){
+  return `<w:p><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">${xmlEsc(etiqueta)}</w:t></w:r><w:r><w:t xml:space="preserve"> ${xmlEsc(valor)}</w:t></w:r></w:p>`;
+}
+function docxInicioParrafo(cuerpo, marcador){
+  const i = cuerpo.indexOf(marcador);
+  return i < 0 ? -1 : Math.max(cuerpo.lastIndexOf('<w:p ', i), cuerpo.lastIndexOf('<w:p>', i));
+}
+function docxQuitarParrafo(cuerpo, marcador){
+  const ini = docxInicioParrafo(cuerpo, marcador);
+  if(ini < 0) return cuerpo;
+  return cuerpo.slice(0, ini) + cuerpo.slice(cuerpo.indexOf('</w:p>', cuerpo.indexOf(marcador)) + 6);
+}
 function esLeroyMerlin(...nombres){ return nombres.some(n=> /leroy\s*merl[ií]n/i.test(String(n||''))); }
 function fmtPesoKg(p){ return (p==null || p==='' || isNaN(Number(p))) ? '' : String(Number(p)).replace('.', ','); }
 /* ctx: { cliente, albaran, referenciaCliente, clienteFinal, personaContacto, telefonoContacto, lineas, numero }
    Solo se incluyen las líneas con Recogida = «Notificada recogida». */
+function lineasConCargoAgencia(lineasInc){
+  return (lineasInc||[]).filter(l=> !l.eliminada && l.cargoAgencia==='Sí');
+}
 function lineasParaComunicadoRecogida(lineasInc){
   return (lineasInc||[]).filter(l=> !l.eliminada && l.recogida==='Notificada recogida');
 }
@@ -4495,15 +4533,22 @@ function buildComunicadoRecogidaDocx(ctx){
     return [ `${String(l.codArticulo||'').trim()} - ${String(l.descripcion||'').trim()}`, uds==null?'':String(uds), fmtPesoKg(peso), '' ];
   });
   const alb = ctx.albaran || {};
-  const direccion = alb.direccionEntrega || '';      // se rellenará cuando el albarán traiga la dirección de entrega
+  const direccion = String(ctx.direccionRecogida || '').trim() || alb.direccionEntrega || '';   // la indicada en la incidencia; si no, la del albarán
   let cuerpo = lm ? DOCX_CUERPO_LM : DOCX_CUERPO_GEN;
   cuerpo = cuerpo
     .replace('{{DIR}}', ()=>docxParrafos(direccion))
     .replace('{{TABLA}}', ()=>docxTablaProductos(filas))
     .split('{{NUM}}').join(xmlEsc(String(ctx.numero==null?'':ctx.numero)))
-    .replace('{{REF}}', ()=>docxParrafo(ctx.referenciaCliente||''))
-    .replace('{{PERSONA}}', ()=>xmlEsc(ctx.personaContacto||''))
-    .replace('{{TELEFONO}}', ()=>xmlEsc(ctx.telefonoContacto||''));
+    .replace('{{REF}}', ()=>docxParrafo(ctx.referenciaCliente||''));
+  /* Nº de expedición (si lo hay) justo antes de los datos de contacto; persona y teléfono en blanco no aparecen en el documento. */
+  const exped = String(ctx.numExpedicion || '').replace(/\D/g,'');
+  if(exped){
+    const ini = docxInicioParrafo(cuerpo, '{{PERSONA}}');
+    if(ini >= 0) cuerpo = cuerpo.slice(0, ini) + docxParrafoCampo('Nº de expedición:', exped) + cuerpo.slice(ini);
+  }
+  const persona = String(ctx.personaContacto || '').trim(), telefono = String(ctx.telefonoContacto || '').trim();
+  cuerpo = persona ? cuerpo.replace('{{PERSONA}}', ()=>xmlEsc(persona)) : docxQuitarParrafo(cuerpo, '{{PERSONA}}');
+  cuerpo = telefono ? cuerpo.replace('{{TELEFONO}}', ()=>xmlEsc(telefono)) : docxQuitarParrafo(cuerpo, '{{TELEFONO}}');
   const enc = new TextEncoder();
   const files = Object.keys(DOCX_PARTES_B64).map(n=>({ name:n, data:b64ABytes(DOCX_PARTES_B64[n]) }));
   files.push({ name:'word/document.xml', data: enc.encode(DOCX_CAB + cuerpo) });
@@ -4512,12 +4557,12 @@ function buildComunicadoRecogidaDocx(ctx){
 
 function contextoComunicadoForm(){
   return { cliente: header.cliente, albaran: header.albaran, referenciaCliente: refClienteDe(header), clienteFinal: header.clienteFinal || '',
-           personaContacto: (header.personaContacto||'').trim(), telefonoContacto: (header.telefonoContacto||'').trim(), lineas: lineas,
+           personaContacto: (header.personaContacto||'').trim(), telefonoContacto: (header.telefonoContacto||'').trim(), numExpedicion: header.numExpedicion || '', direccionRecogida: header.direccionRecogida || '', lineas: lineas,
            ficheros: ficherosDeIncidencia(header, lineas) };
 }
 function contextoComunicadoInc(inc){
   return { cliente: inc.cliente, albaran: inc.albaran, referenciaCliente: refClienteDe(inc), clienteFinal: inc.clienteFinal || '',
-           personaContacto: (inc.personaContacto||'').trim(), telefonoContacto: (inc.telefonoContacto||'').trim(), lineas: inc.lineas,
+           personaContacto: (inc.personaContacto||'').trim(), telefonoContacto: (inc.telefonoContacto||'').trim(), numExpedicion: inc.numExpedicion || '', direccionRecogida: inc.direccionRecogida || '', lineas: inc.lineas,
            ficheros: ficherosDeIncidencia(inc, inc.lineas) };
 }
 async function descargarComunicadoRecogida(ctx, numero, cont){
@@ -4667,19 +4712,32 @@ function renderComunicadoRecogidaBox(){
   const card = document.getElementById('comunicadoRecogidaCard');
   if(!card) return;
   const n = lineasParaComunicadoRecogida(lineas).length;
-  card.hidden = n === 0;
-  if(!n){ const bx = card.querySelector('[data-rec-lm]'); if(bx) bx.dataset.init = ''; return; }
+  const nCargo = lineasConCargoAgencia(lineas).length;
+  card.hidden = n === 0 && nCargo === 0;     // también se muestra si hay cargo a la agencia, para poder indicar el nº de expedición
+  const bxLM = card.querySelector('[data-rec-lm]');
+  if(!n && bxLM) bxLM.dataset.init = '';
+  if(card.hidden) return;
   document.getElementById('personaContacto').value = header.personaContacto || '';
   document.getElementById('telefonoContacto').value = header.telefonoContacto || '';
-  document.getElementById('comunicadoHint').textContent = `${n} línea(s) con recogida notificada · ${header.cliente ? modeloComunicadoTexto(contextoComunicadoForm()) : 'elige un cliente'}`;
+  document.getElementById('numExpedicionBox').hidden = nCargo === 0;
+  document.getElementById('numExpedicion').value = header.numExpedicion || '';
+  const dirEl = document.getElementById('direccionRecogida');
+  dirEl.value = header.direccionRecogida || '';
+  const dirAlb = (header.albaran && header.albaran.direccionEntrega) || '';
+  dirEl.placeholder = dirAlb ? dirAlb.replace(/\n/g, ' · ') : (header.albaran ? 'El albarán no trae dirección: escríbela aquí' : 'Escríbela aquí (no hay albarán)');
+  const btnDoc = document.getElementById('btnComunicadoRecogida');
+  btnDoc.hidden = n === 0;
+  if(bxLM && !n) bxLM.hidden = true;
   const ctxF = contextoComunicadoForm();
+  document.getElementById('comunicadoHint').textContent = n ? `${n} línea(s) con recogida notificada · ${header.cliente ? modeloComunicadoTexto(ctxF) : 'elige un cliente'}` : 'Ninguna línea tiene la recogida notificada: el comunicado Word no se genera.';
+  if(!n) return;
   prepararOpcionesRecogidaLM(card, ctxF);
-  document.getElementById('btnComunicadoRecogida').textContent = esClienteLM(ctxF) ? '⬇ Descargar comunicado de recogida (Word + PDF)' : '⬇ Descargar comunicado de recogida (Word)';
+  btnDoc.textContent = esClienteLM(ctxF) ? '⬇ Descargar comunicado de recogida (Word + PDF)' : '⬇ Descargar comunicado de recogida (Word)';
 }
 function buildComunicadoRecogidaReadonly(inc){
   const n = lineasParaComunicadoRecogida(inc.lineas).length;
   if(!n) return '';
-  const contacto = [inc.personaContacto, inc.telefonoContacto].filter(x=>x && String(x).trim()).map(escapeHtml).join(' · ');
+  const contacto = [inc.personaContacto, inc.telefonoContacto, inc.numExpedicion ? 'Exp. nº ' + inc.numExpedicion : ''].filter(x=>x && String(x).trim()).map(escapeHtml).join(' · ');
   const ctx = contextoComunicadoInc(inc);
   const lm = esClienteLM(ctx);
   const adj = lm ? buscarDocumentoRecogidaLM(ctx) : null;
