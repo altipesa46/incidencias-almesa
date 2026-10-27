@@ -243,7 +243,15 @@
   .comunicado-contacto{display:flex;flex-wrap:wrap;gap:16px 20px;justify-content:flex-start;}
   .comunicado-contacto .field:first-child{flex:0 1 25%;min-width:220px;}
   .comunicado-contacto .field:nth-child(2){flex:0 1 25%;min-width:180px;}
-  .comunicado-contacto #numExpedicionBox{flex:0 1 25%;min-width:180px;}
+  #cartaCampos{align-items:stretch;}
+#cartaCampos .field{display:flex;flex-direction:column;}
+#cartaCampos .field > label{flex:1 1 auto;display:flex;align-items:flex-end;}   /* etiquetas de 1 o 2 líneas: los cuadros quedan siempre alineados abajo */
+#cartaCampos .field > input, #cartaCampos .field > .hint, #cartaCampos .field > button{flex:none;}
+#docsCargoGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 18px;align-items:start;}
+#docsCargoGrid .field > label{min-height:2.7em;display:block;}
+@media (max-width:1000px){ #docsCargoGrid{grid-template-columns:repeat(2,minmax(0,1fr));} }
+@media (max-width:620px){ #docsCargoGrid{grid-template-columns:minmax(0,1fr);} #docsCargoGrid .field > label{min-height:0;} }
+.comunicado-contacto #numExpedicionBox{flex:0 1 25%;min-width:180px;}
   .comunicado-contacto .field.dir-rec{flex:0 1 calc(75% + 40px);min-width:320px;}
   .comunicado-contacto .field.dir-rec textarea{min-height:44px;resize:vertical;}
   .btn-obs{width:100%;justify-content:space-between;background:#fff;padding:0 11px;font-weight:500;height:44px;white-space:nowrap;}
@@ -647,8 +655,8 @@
               <input type="text" id="referenciaCliente" maxlength="30" placeholder="Referencia / nº de pedido del cliente" oninput="header.referenciaCliente=this.value">
             </div>
             <div class="field">
-              <label>Cliente final <span class="mod-log">(máx. 30)</span></label>
-              <input type="text" id="clienteFinal" maxlength="30" placeholder="Cliente final / destinatario" oninput="header.clienteFinal=this.value">
+              <label>Cliente final <span class="mod-log">(máx. 80)</span></label>
+              <input type="text" id="clienteFinal" maxlength="80" placeholder="Cliente final / destinatario" oninput="header.clienteFinal=this.value">
             </div>
           </div>
 
@@ -741,8 +749,10 @@
       <div class="card" id="comunicadoRecogidaCard" hidden>
         <div class="card-head">
           <h2>Comunicado de recogida a la agencia</h2>
+          <span class="hint" id="comunicadoHeadHint"></span>
+          <button type="button" class="btn btn-sm" style="margin-left:auto;" id="btnToggleComunicado" onclick="toggleSeccionColapsable('comunicadoRecogida')">▸ Mostrar</button>
         </div>
-        <div class="card-body">
+        <div class="card-body" id="comunicadoRecogidaWrap" hidden>
           <div class="comunicado-contacto">
             <div class="field"><label>Persona de contacto <span class="mod-log">(máx. 60)</span></label><input type="text" id="personaContacto" maxlength="60" placeholder="Quién atenderá a la agencia" oninput="header.personaContacto=this.value"></div>
             <div class="field"><label>Teléfono de contacto <span class="mod-log">(máx. 20)</span></label><input type="tel" id="telefonoContacto" maxlength="20" placeholder="Teléfono" oninput="header.telefonoContacto=this.value"></div>
@@ -760,6 +770,33 @@
             <span class="hint" id="comunicadoHint"></span>
             <div class="spacer"></div>
             <button type="button" class="btn btn-primary" id="btnComunicadoRecogida" onclick="generarComunicadoRecogida()">⬇ Descargar comunicado de recogida (Word)</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="hint" id="avisoSeccionesPosteriores" style="margin:-4px 4px 14px;" hidden>Cuando toque, edita la línea («Editar ›»): al poner <b>Recogida = «Notificada recogida»</b> aparece el «Comunicado de recogida a la agencia», y al poner <b>Cargo agencia = «Sí»</b> aparecen los «Documentos de cargo a la agencia» y las cartas de cargo.</div>
+
+      <div class="card" id="docsCargoCard" hidden>
+        <div class="card-head">
+          <h2>Documentos de cargo a la agencia</h2>
+          <span class="hint" id="docsCargoHeadHint"></span>
+          <button type="button" class="btn btn-sm" style="margin-left:auto;" id="btnToggleDocsCargo" onclick="toggleSeccionColapsable('docsCargo')">▸ Mostrar</button>
+        </div>
+        <div class="card-body" id="docsCargoWrap" hidden>
+          <div class="hint" style="margin-bottom:10px;">Cada documento va en su apartado para localizarlo fácilmente. Los de reposición y abono solo hacen falta si se da ese caso.</div>
+          <div id="docsCargoGrid"></div>
+          <div id="cartaCargoBox" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+            <h3 style="margin:0 0 4px;font-size:15px;">Carta de cargo a la agencia</h3>
+            <div class="hint" style="margin-bottom:10px;">Elige el tipo de carta: se pedirán solo los datos que ese modelo necesita. <span id="cartaIntroExtra"></span></div>
+            <div class="field" style="max-width:620px;"><label>Tipo de carta</label><select id="cartaModelo" onchange="cambiarModeloCarta(this.value)"></select></div>
+            <div id="cartaCampos" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 18px;margin-top:12px;"></div>
+            <div id="cartaImpCargoFila" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;"></div>
+            <div id="cartaLottBox" style="margin-top:14px;" hidden></div>
+            <div class="toolbar" style="margin-top:14px;">
+              <span class="hint" id="cartaHint"></span>
+              <div class="spacer"></div>
+              <button type="button" class="btn btn-primary" id="btnCartaCargo" onclick="generarCartaCargo()" hidden>⬇ Descargar carta de cargo (Word)</button>
+            </div>
           </div>
         </div>
       </div>
@@ -790,7 +827,7 @@
             <div class="field"><label>Cliente</label><input type="text" id="fCliente"></div>
             <div class="field"><label>Nº Albarán</label><input type="text" id="fAlbaran" class="mono"></div>
             <div class="field"><label>Ref. cliente</label><input type="text" id="fRefCliente" maxlength="30" placeholder="Referencia"></div>
-            <div class="field"><label>Cliente final</label><input type="text" id="fClienteFinal" maxlength="30" placeholder="Cliente final"></div>
+            <div class="field"><label>Cliente final</label><input type="text" id="fClienteFinal" maxlength="80" placeholder="Cliente final"></div>
             <div class="field"><label>Estado</label><select id="fEstado" multiple></select></div>
             <div class="field"><label>Cargo agencia</label><select id="fCargoAgencia" multiple></select></div>
           </div>
@@ -837,6 +874,7 @@
                 <th class="num" title="Nº de líneas de la incidencia con una Reparación aplicada">Reparación</th>
                 <th class="num" title="Nº de líneas de la incidencia con un Cambio aplicado">Cambio</th>
                 <th class="num" title="Nº de líneas de la incidencia con un Abono aplicado">Abono</th>
+                <th class="num" title="Nº de líneas de la incidencia desestimadas (no proceden)">Desestimada</th>
                 <th class="num">Líneas</th>
                 <th style="width:40px;"></th>
               </tr>
@@ -1181,7 +1219,7 @@ const INC_STORAGE_KEY = 'almesa_inc_snapshot_v1';
 /* «Datos de la reclamación» y «Acción a realizar» son secciones largas (motivo/submotivo/caso en
    cascada, tabla de la acción, etc.) que solo hacen falta cuando se va a rellenar algo ahí: se
    mantienen colapsadas por defecto y cada una se despliega con su propio botón. */
-let seccionesColapsables = { datosComunes:false, accionRealizar:false };
+let seccionesColapsables = { datosComunes:false, accionRealizar:false, comunicadoRecogida:false, docsCargo:false };
 
 /* ================= DESCARGA DE ARCHIVOS (común) =================
    Dentro de Claude (Artifact) se usa su capacidad "downloads"; en cualquier otro sitio (Cloudflare, etc.)
@@ -1243,6 +1281,8 @@ function incARemoto(inc){
     accionesRealizar: acciones, comunicacionCliente: archivosRemotos(inc.comunicacionCliente), documentos: archivosRemotos(inc.documentos),
     historial: inc.historial || []
   };
+  DOCS_CARGO_KEYS.forEach(k=>{ datos[k] = archivosRemotos(inc[k]); });
+  datos.cartaCargo = normCarta(inc.cartaCargo);
   const alb = inc.albaran;
   return {
     fechaApertura: inc.fechaApertura, fechaComunicacion: inc.fechaComunicacion, estado: inc.estado,
@@ -1260,7 +1300,7 @@ function nombreSeguro(n){
 }
 function coleccionarArchivos(inc){
   const out = [];
-  [inc.comunicacionCliente, inc.documentos].forEach(a=> (a||[]).forEach(f=> out.push(f)));
+  [inc.comunicacionCliente, inc.documentos].concat(DOCS_CARGO_KEYS.map(k=>inc[k])).forEach(a=> (a||[]).forEach(f=> out.push(f)));
   (inc.lineas||[]).forEach(l=>{
     (l.adjuntos||[]).forEach(f=> out.push(f));
     const r = l.recepcion;
@@ -1347,8 +1387,9 @@ async function nubeCrear(rec){
   nubeSync.set(rec.id, { snap: nubeSnap(rec) });
 }
 function normalizarIncRemota(inc){
+  inc.cartaCargo = normCarta(inc.cartaCargo);
   inc.cliente = inc.cliente || { cod:'', nombre:'—', cif:'' };
-  ['comunicacionCliente','documentos','historial','accionesRealizar','lineas','origenes','recogidas'].forEach(k=>{ if(!Array.isArray(inc[k])) inc[k] = []; });
+  ['comunicacionCliente','documentos','historial','accionesRealizar','lineas','origenes','recogidas'].concat(DOCS_CARGO_KEYS).forEach(k=>{ if(!Array.isArray(inc[k])) inc[k] = []; });
   if(inc.manualEnEspera == null) inc.manualEnEspera = false;
   inc.lineas.forEach(l=>{
     if(!Array.isArray(l.adjuntos)) l.adjuntos = [];
@@ -1670,13 +1711,14 @@ if(!CLOUD) comprobarSesionGuardada();
 
 function emptyHeader(){
   return { fechaApertura: todayISO(), fechaComunicacion:'', cliente:null, albaran:null,
-    manualEnEspera:false, comunicacionCliente:[], documentos:[], accionesRealizar:[], observaciones:'', referenciaCliente:'', clienteFinal:'', empresaGrupo:'', personaContacto:'', telefonoContacto:'', numExpedicion:'', direccionRecogida:'' };
+    manualEnEspera:false, comunicacionCliente:[], documentos:[], dcFacturaOriginal:[], dcAlbaranOriginal:[], dcAlbaranReposicion:[], dcAbonoFactura:[], dcFacturaCargo:[], dcFotosDanos:[], cartaCargo:{modelo:'',expRepo:'',impRepo:'',expDevol:'',impDevol:''}, accionesRealizar:[], observaciones:'', referenciaCliente:'', clienteFinal:'', empresaGrupo:'', personaContacto:'', telefonoContacto:'', numExpedicion:'', direccionRecogida:'' };
 }
 const ACCIONES_INCIDENCIA = [
   { cod:'reposicion', desc:'Reposición' },
   { cod:'reparacion', desc:'Reparación' },
   { cod:'cambio', desc:'Cambio' },
-  { cod:'abono', desc:'Abono' }
+  { cod:'abono', desc:'Abono' },
+  { cod:'desestimada', desc:'Desestimada', sinImpreso:true }   // reclamación que no procede: queda registrada (historial) sin generar impreso
 ];
 const CARGO_AGENCIA_OPTS = ['Sí', 'No'];
 /* Un solo motivo por línea (motivoQty/submotivoQty/casoQty). Cuando es «Diferencia de precio» se puede indicar el precio correcto (Incid. PVP). */
@@ -2019,7 +2061,8 @@ function dashboardMesLabel(key){
 }
 function incidenciaUnidadesAfectadas(inc){
   const lineasActivas = (inc.lineas||[]).filter(l=>!l.eliminada);
-  return lineasActivas.reduce((s,l)=> s + comprometidoEnBloques(inc.accionesRealizar, l), 0);
+  const reales = (inc.accionesRealizar||[]).filter(b=> b.tipo !== 'desestimada');   // una reclamación desestimada no afecta a ninguna unidad
+  return lineasActivas.reduce((s,l)=> s + comprometidoEnBloques(reales, l), 0);
 }
 function dashboardNum(n){
   if(!n) return 0;
@@ -2357,7 +2400,7 @@ async function _renderAlbaranResults(q){
    Si el usuario ya había escrito otro valor a mano, se respeta; si el valor venía del albarán anterior, se sustituye por el del nuevo. */
 function aplicarDatosAlbaran(a){
   const ref = String((a && a.referenciaCliente) || '').trim().slice(0,30);
-  const cf = String((a && a.razonSocialEnvio) || '').trim().slice(0,30);
+  const cf = String((a && a.razonSocialEnvio) || '').trim().slice(0,80);
   const curRef = String(header.referenciaCliente || '').trim();
   const curCf = String(header.clienteFinal || '').trim();
   if(!curRef || curRef === autoRefCliente){ header.referenciaCliente = ref; autoRefCliente = ref; }
@@ -3263,6 +3306,8 @@ function diffCambiosIncidencia(before, after){
   if((before.empresaGrupo||'') !== (after.empresaGrupo||'')) cambios.push(`Empresa: ${before.empresaGrupo||'—'} → ${after.empresaGrupo||'—'}`);
   if((before.personaContacto||'') !== (after.personaContacto||'')) cambios.push(`Persona de contacto (recogida): ${before.personaContacto||'—'} → ${after.personaContacto||'—'}`);
   if((before.telefonoContacto||'') !== (after.telefonoContacto||'')) cambios.push(`Teléfono de contacto (recogida): ${before.telefonoContacto||'—'} → ${after.telefonoContacto||'—'}`);
+  DOCS_CARGO.forEach(d=>{ const a=(before[d.key]||[]).length, b=(after[d.key]||[]).length; if(a!==b) cambios.push(`${d.titulo}: ${a} → ${b} archivo(s)`); });
+  { const a = JSON.stringify(normCarta(before.cartaCargo)), b = JSON.stringify(normCarta(after.cartaCargo)); if(a!==b){ const x = normCarta(before.cartaCargo), y = normCarta(after.cartaCargo); cambios.push(x.modelo!==y.modelo ? `Carta de cargo: ${x.modelo||'—'} → ${y.modelo||'—'}` : 'Carta de cargo: datos modificados'); } }
   if((before.numExpedicion||'') !== (after.numExpedicion||'')) cambios.push(`Nº de expedición: ${before.numExpedicion||'—'} → ${after.numExpedicion||'—'}`);
   if((before.direccionRecogida||'') !== (after.direccionRecogida||'')) cambios.push(`Dirección de recogida: ${before.direccionRecogida||'—'} → ${after.direccionRecogida||'—'}`);
   if((before.clienteFinal||'') !== (after.clienteFinal||'')) cambios.push(`Cliente final: ${before.clienteFinal||'—'} → ${after.clienteFinal||'—'}`);
@@ -3413,19 +3458,396 @@ function recomputeIncidenciaHeader(inc){
 }
 
 /* ================= ADJUNTOS DE CABECERA ================= */
+/* Documentos de cargo a la agencia: un apartado (lista de archivos) por cada tipo de documento. Se guardan en `datos` de la incidencia. */
+const DOCS_CARGO = [
+  { key:'dcFacturaOriginal',   titulo:'Factura original',                                   ayuda:'' },
+  { key:'dcAlbaranOriginal',   titulo:'Albarán sellado por la agencia del envío original',  ayuda:'' },
+  { key:'dcAlbaranReposicion', titulo:'Albarán de reposición sellado por la agencia',       ayuda:'Solo en caso de reposición' },
+  { key:'dcAbonoFactura',      titulo:'Abono de la factura',                                ayuda:'Solo en caso de abono' },
+  { key:'dcFacturaCargo',      titulo:'Factura de cargo a la agencia',                      ayuda:'' },
+  { key:'dcFotosDanos',        titulo:'Fotos de los daños del producto',                    ayuda:'' }
+];
+const DOCS_CARGO_KEYS = DOCS_CARGO.map(d=>d.key);
+function docsCargoDeInc(inc){ return DOCS_CARGO.reduce((n,d)=> n + ((inc && inc[d.key])||[]).length, 0); }
+function listIdDe(key){ return key==='comunicacionCliente' ? 'listComCliente' : (key==='documentos' ? 'listDocs' : 'list_'+key); }
 function addFiles(scope, key, fileListObj){
   const arr = header[key];
   Array.from(fileListObj).forEach(f=> arr.push({name:f.name, size:f.size, file:f}));
-  renderFileList(key, key==='comunicacionCliente' ? 'listComCliente' : 'listDocs');
+  renderFileList(key, listIdDe(key));
+}
+
+/* ===================== Cartas de cargo a la agencia (Word) =====================
+   Cada tipo de cargo tiene su modelo de carta. De momento están cargados el 3.1 y el 3.2 (falta de mercancía); el resto
+   aparece en la lista como «pendiente» y se activará al incorporar su plantilla. `campos` son los datos que pide cada modelo. */
+const CARTA_CAMPOS = {
+  expOrig:  { label:'Nº de expedición del envío original', tipo:'exp' },
+  impOrig:  { label:'Importe de los portes del envío original (€)', tipo:'imp' },
+  expRepo:  { label:'Nº de expedición de la reposición', tipo:'exp' },
+  impRepo:  { label:'Importe de los portes de la reposición (€)', tipo:'imp' },
+  expDevol: { label:'Nº de expedición de la devolución', tipo:'exp' },
+  impDevol: { label:'Importe de los portes de la devolución (€)', tipo:'imp' },
+  impCargo: { label:'Importe total del cargo (€)', tipo:'imp', auto:true }   // por defecto: lo marcado en el cargo a la agencia; se puede modificar
+};
+const CARTAS_CARGO = [
+  { cod:'1.1',   grupo:'1 · Mercancía en perfecto estado', titulo:'Devolución de pedido completo', disponible:true, campos:['expOrig','impOrig','expDevol','impDevol'] },
+  { cod:'1.2',   grupo:'1 · Mercancía en perfecto estado', titulo:'Devolución de pedido parcial', disponible:true, campos:['expDevol','impDevol'] },
+  { cod:'2.1',   grupo:'2 · Mercancía con daños', titulo:'Abono', disponible:true, campos:['impCargo'] },
+  { cod:'2.2',   grupo:'2 · Mercancía con daños', titulo:'Reposición', disponible:true, campos:['expDevol','impDevol','impCargo'] },
+  { cod:'3.1',   grupo:'3 · Falta de mercancía', titulo:'En el envío', disponible:true, importe:'lott', campos:['expRepo','impRepo','impCargo'] },
+  { cod:'3.2',   grupo:'3 · Falta de mercancía', titulo:'En la recogida + portes de devolución', disponible:true, importe:'lott', campos:['expRepo','impRepo','expDevol','impDevol','impCargo'] }
+];
+function normCarta(c){
+  c = c || {};
+  const exp = v=> String(v==null?'':v).replace(/\D/g,'').slice(0,20);
+  const imp = v=> String(v==null?'':v).replace(/[^\d.,]/g,'').slice(0,12);
+  const pesos = {};
+  Object.keys(c.pesos || {}).forEach(k=>{ const v = imp(c.pesos[k]); if(v) pesos[String(k).slice(0,60)] = v; });
+  return { modelo: String(c.modelo||''), expOrig: exp(c.expOrig), impOrig: imp(c.impOrig), expRepo: exp(c.expRepo), impRepo: imp(c.impRepo), expDevol: exp(c.expDevol), impDevol: imp(c.impDevol), impCargo: imp(c.impCargo), pesos, constanteLott: imp(c.constanteLott) };
+}
+function parseImporteCarta(v){
+  let t = String(v==null?'':v).replace(/[\s€]/g,'');
+  if(!t) return null;
+  if(t.includes(',')) t = t.replace(/\./g,'').replace(',','.');
+  const n = Number(t);
+  return isNaN(n) ? null : n;
+}
+function fmtNumCarta(n){ return Number(n).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2,useGrouping:'always'}); }
+/* Líneas del cargo y su importe. Falta de mercancía (modelos 3.x): el único cargo que se puede repercutir a la agencia es el de la LOTT
+   (Ley de Ordenación de los Transportes Terrestres) = peso × constante. El peso se indica aquí, línea a línea (si la línea ya tiene
+   peso de recepción se aprovecha). Resto de modelos: el importe elegido en la línea (LOTT o % descuento). Nunca se usa el valor de la mercancía ni se suman portes. */
+function constanteLottCarta(carta){
+  const c = parseImporteCarta(carta && carta.constanteLott);
+  return c != null && c > 0 ? c : CONSTANTE_LOTT_DEFECTO;
+}
+function pesoLineaCarta(l, carta){
+  const manual = parseImporteCarta(carta && carta.pesos && carta.pesos[l.id]);
+  if(manual != null) return manual;
+  const pr = l.recepcion && l.recepcion.peso;
+  return (pr != null && pr !== '' && !isNaN(Number(pr))) ? Number(pr) : null;
+}
+function lineasCartaCargo(lineasInc, carta, modelo){
+  const lott = !!(modelo && modelo.importe === 'lott');
+  return lineasConCargoAgencia(lineasInc).map(l=>{
+    const uds = qtyLineaAccion(l);
+    let ia, peso = null;
+    if(lott){
+      peso = pesoLineaCarta(l, carta);
+      ia = calcImporteLott(peso, constanteLottCarta(carta));
+      if(ia != null) ia = Math.round(ia*100)/100;     // a céntimos
+    } else {
+      ia = l.recepcion && l.recepcion.importeAgencia != null && !isNaN(Number(l.recepcion.importeAgencia)) ? Number(l.recepcion.importeAgencia) : null;
+    }
+    return { id: l.id, ref: String(l.codArticulo||'').trim(), desc: String(l.descripcion||'').trim(), uds, peso, importeCargo: ia, puCargo: (ia != null && uds > 0) ? ia/uds : null, sinImporte: ia == null };
+  });
+}
+/* ctx: { cartaCargo, lineas, numExpedicion }. Devuelve lo que se escribirá en la carta y lo que falta por rellenar. */
+function datosCartaCargo(ctx){
+  const c = normCarta(ctx.cartaCargo);
+  const modelo = CARTAS_CARGO.find(m=>m.cod===c.modelo) || null;
+  const lins = lineasCartaCargo(ctx.lineas, c, modelo);
+  const totalDefecto = lins.reduce((a,l)=>a+(l.importeCargo||0),0);     // suma del importe elegido en cada línea (LOTT o % descuento)
+  const sinImporte = lins.filter(l=>l.sinImporte).length;               // líneas con cargo pero sin importe elegido
+  const manual = parseImporteCarta(c.impCargo);
+  const total = manual != null ? manual : totalDefecto;
+  const exped = Object.assign({}, c);
+  if(!exped.expDevol) exped.expDevol = String(ctx.numExpedicion||'').replace(/\D/g,'');   // por defecto, la expedición del comunicado de recogida
+  const faltan = [];
+  if(!modelo) faltan.push('el tipo de carta');
+  else if(!modelo.disponible) faltan.push('la plantilla de este modelo (todavía no está cargada)');
+  else modelo.campos.forEach(k=>{
+    const t = CARTA_CAMPOS[k];
+    if(t.auto) return;
+    if(t.tipo==='exp' ? !exped[k] : parseImporteCarta(exped[k])==null) faltan.push(t.label);
+  });
+  const conTabla = !!(modelo && modelo.disponible && modelo.campos.includes('impCargo'));      // 1.1 y 1.2 solo piden expediciones y portes, sin detalle de líneas
+  if(conTabla && !lins.length) faltan.push('al menos una línea con Cargo agencia = Sí');
+  else if(conTabla && modelo.importe === 'lott' && sinImporte) faltan.push('el peso (kg) para calcular la LOTT de: ' + lins.filter(l=>l.sinImporte).map(l=>l.ref).join(', '));
+  else if(conTabla && !(total > 0)) faltan.push(sinImporte ? 'el importe a facturar a la agencia (elige LOTT o % descuento en la línea) o escribirlo a mano' : 'el importe del cargo');
+  return { c: exped, modelo, lins, total, totalDefecto, sinImporte, manual: manual != null, faltan };
+}
+function docxRun(texto, o){
+  o = o || {};
+  const pr = (o.b ? '<w:b/><w:bCs/>' : '') + (o.u ? '<w:u w:val="single"/>' : '') + (o.sz ? `<w:sz w:val="${o.sz}"/><w:szCs w:val="${o.sz}"/>` : '');
+  return `<w:r>${pr ? `<w:rPr>${pr}</w:rPr>` : ''}<w:t xml:space="preserve">${xmlEsc(texto)}</w:t></w:r>`;
+}
+function docxP(runs, jc){ return `<w:p>${jc ? `<w:pPr><w:jc w:val="${jc}"/></w:pPr>` : ''}${runs}</w:p>`; }
+function docxCeldaCarta(texto, ancho, o){
+  o = o || {};
+  const borde = o.cab ? '<w:tcBorders><w:bottom w:val="single" w:sz="6" w:space="0" w:color="808080"/></w:tcBorders>' : '';
+  return `<w:tc><w:tcPr><w:tcW w:w="${ancho}" w:type="dxa"/>${borde}</w:tcPr><w:p><w:pPr><w:spacing w:before="40" w:after="40" w:line="240" w:lineRule="auto"/>${o.der ? '<w:jc w:val="right"/>' : ''}</w:pPr>${docxRun(texto, { b:o.cab, sz:20 })}</w:p></w:tc>`;
+}
+function docxTablaCarta(lins){
+  const anchos = [1500, 3596, 1100, 1700, 1600];
+  const fila = (cols, cab)=> `<w:tr><w:trPr><w:cantSplit/></w:trPr>${cols.map((c,i)=>docxCeldaCarta(c, anchos[i], { cab, der: i>=2 })).join('')}</w:tr>`;
+  return `<w:tbl><w:tblPr><w:tblW w:w="${anchos.reduce((a,b)=>a+b,0)}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="60" w:type="dxa"/><w:right w:w="60" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${anchos.map(a=>`<w:gridCol w:w="${a}"/>`).join('')}</w:tblGrid>`
+    + fila(['Referencia','Descripción','Unidades','Precio Unitario','Precio Total'], true)
+    + lins.map(l=> fila([l.ref, l.desc, String(l.uds), l.puCargo!=null ? fmtNumCarta(l.puCargo)+' €' : '—', l.importeCargo!=null ? fmtNumCarta(l.importeCargo)+' €' : '—'], false)).join('')
+    + '</w:tbl>';
+}
+const DOCX_FIN_CARTA = '<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="11906" w:h="16838" w:code="9"/><w:pgMar w:top="1418" w:right="1276" w:bottom="1276" w:left="1134" w:header="709" w:footer="709" w:gutter="0"/><w:cols w:space="708"/><w:titlePg/><w:docGrid w:linePitch="360"/></w:sectPr></w:body></w:document>';
+function docxCartaDesdeCuerpo(cuerpo){
+  const enc = new TextEncoder();
+  const files = Object.keys(DOCX_PARTES_B64).map(n=>({ name:n, data:b64ABytes(DOCX_PARTES_B64[n]) }));
+  files.push({ name:'word/document.xml', data: enc.encode(DOCX_CAB + cuerpo) });
+  return zipSinComprimir(files);
+}
+/* Modelos 1.1 y 1.2 (abono de portes en mercancía en perfecto estado): sin tabla ni importe total. */
+function buildCartaAbonoPortesDocx(ctx){
+  const d = datosCartaCargo(ctx);
+  const m = d.modelo, c = d.c;
+  const imp = k=> fmtNumCarta(parseImporteCarta(c[k]));
+  const p1 = m.cod==='1.1'
+    ? docxRun('Solicitamos el abono de portes del envío original correspondiente a vuestro número de expedición ' + c.expOrig + ', ')
+      + docxRun('por importe de ' + imp('impOrig') + ' €', { b:true })
+      + docxRun(', y los portes de la devolución correspondiente a vuestro número de expedición ' + c.expDevol + ', ')
+      + docxRun('por importe de ' + imp('impDevol') + ' €.', { b:true })
+    : docxRun('Solicitamos el abono correspondiente a los portes de la devolución correspondiente a vuestro número de expedición ' + c.expDevol + ', ')
+      + docxRun('por importe de € ' + imp('impDevol') + '.', { b:true });
+  const cuerpo = docxP(docxRun('DOCUMENTO RECLAMACION DE PORTES', { b:true }))
+    + docxP(docxRun('Incidencia Nº ' + String(ctx.numero==null?'':ctx.numero), { b:true }))
+    + docxP(docxRun('Muy Sres. Nuestros:'))
+    + docxP(p1, 'both')
+    + docxP(docxRun('Por otro lado, adjuntamos los documentos correspondientes para la validación por vuestra parte.'), 'both')
+    + (m.cod==='1.1' ? docxP('', 'both') : '')
+    + docxP(docxRun('Sin otro particular y esperando vernos atendidos en lo solicitado, reciban un cordial saludo.'), 'both')
+    + '<w:p/><w:p/><w:p/><w:p/><w:p/><w:p/>' + DOCX_FIN_CARTA;
+  return docxCartaDesdeCuerpo(cuerpo);
+}
+/* Modelos 2.1 (abono) y 2.2 (reposición) de mercancía con daños: cargo por el importe elegido en cada línea + tabla. */
+function buildCartaDanosDocx(ctx){
+  const d = datosCartaCargo(ctx);
+  const m = d.modelo, c = d.c;
+  const imp = k=> fmtNumCarta(parseImporteCarta(c[k]));
+  const nota = docxP(docxRun('NOTA: ', { b:true, u:true }) + docxRun('Si no recibimos notificación en el plazo de 15 días desde la recepción de este email, indicando la revisión o retirada por sus medios de la mercancía, procederemos a su destrucción/reparación según proceda.', { b:true, u:true }))
+    + docxP(docxRun('Os recordamos que en el caso de retirada de mercancía ') + docxRun('dañada parcialmente', { b:true, u:true }) + docxRun(' se pasa cargo por el importe de venta al cliente (EXCEPTO EN REFERENCIAS DAÑADAS 100% QUE EL IMPORTE ES SEGÚN LOTT). '));
+  const intro = m.cod==='2.1'
+    ? docxP(docxRun('En relación con la incidencia del asunto, os remitiremos el cargo correspondiente a los daños ocasionados en la mercancía (LOTT), ') + docxRun('por un importe total de euros ' + fmtNumCarta(d.total), { b:true }) + docxRun(' según el detalle adjunto:'))
+    : docxP(docxRun('En relación con la incidencia del asunto, solicitamos el abono correspondiente a los portes de la devolución con vuestro número de expedición ' + c.expDevol + ' ') + docxRun('por importe de € ' + imp('impDevol'), { b:true }) + docxRun('.'), 'both')
+      + docxP(docxRun('Por otro lado, quiero indicarles que vamos a proceder a su reparación (NO HAY QUE RECOGER DE FÁBRICA), ya que la escalera se puede recuperar y os remitiremos un cargo por un ') + docxRun('importe de ' + fmtNumCarta(d.total) + '€', { b:true }) + docxRun('  correspondiente a los daños ocasionados según el detalle adjunto:'));
+  const cuerpo = docxP(docxRun('DOCUMENTO RECLAMACION DE PORTES', { b:true }))
+    + docxP(docxRun('Incidencia Nº ' + String(ctx.numero==null?'':ctx.numero), { b:true }))
+    + docxP(docxRun('Muy Sres. Nuestros:'))
+    + intro
+    + docxTablaCarta(d.lins)
+    + '<w:p/>'
+    + docxP(docxRun((m.cod==='2.2' ? 'Finalmente, ' : 'Por otro lado, ') + 'adjuntamos los documentos correspondientes para la validación por vuestra parte.'), 'both')
+    + nota
+    + docxP(docxRun('Sin otro particular y esperando vernos atendidos en lo solicitado, reciban un cordial saludo.'), 'both')
+    + '<w:p/><w:p/><w:p/><w:p/><w:p/><w:p/>' + DOCX_FIN_CARTA;
+  return docxCartaDesdeCuerpo(cuerpo);
+}
+/* Modelos 3.1 y 3.2 («DOCUMENTO RECLAMACION DE PORTES»): mismo texto; el 3.2 añade la devolución. */
+function buildCartaCargoDocx(ctx){
+  const d = datosCartaCargo(ctx);
+  const m = d.modelo, c = d.c;
+  if(m.cod==='1.1' || m.cod==='1.2') return buildCartaAbonoPortesDocx(ctx);
+  if(m.cod==='2.1' || m.cod==='2.2') return buildCartaDanosDocx(ctx);
+  const imp = k=> fmtNumCarta(parseImporteCarta(c[k]));
+  let p1 = docxRun('Solicitamos anulación de los portes de envío de la reposición expedición ' + c.expRepo + '  ')
+         + docxRun('por un importe de ' + imp('impRepo') + '.-€', { b:true, u:true })
+         + docxRun(' ya que NO PROCEDEN CARGOS' + (m.cod==='3.2' ? ', así como los portes correspondientes a la devolución del material con número de expedición ' + c.expDevol + '  por un importe de ' + imp('impDevol') + '€.' : '. '));
+  const fin = '<w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="11906" w:h="16838" w:code="9"/><w:pgMar w:top="1418" w:right="1276" w:bottom="1276" w:left="1134" w:header="709" w:footer="709" w:gutter="0"/><w:cols w:space="708"/><w:titlePg/><w:docGrid w:linePitch="360"/></w:sectPr></w:body></w:document>';
+  const cuerpo = docxP(docxRun('DOCUMENTO RECLAMACION DE PORTES', { b:true }))
+    + docxP(docxRun('Incidencia Nº ' + String(ctx.numero==null?'':ctx.numero), { b:true }))
+    + docxP(docxRun('Muy Sres. Nuestros:'))
+    + docxP(p1)
+    + docxP(docxRun('Por otro lado os vamos a pasar cargo por la FALTA DE MERCANCÍA (LOTT), por un importe total de euros ' + fmtNumCarta(d.total) + ' según el detalle adjunto'))
+    + docxTablaCarta(d.lins)
+    + '<w:p/>'
+    + docxP(docxRun('Finalmente adjuntamos los documentos correspondientes a dicha reclamación para la validación por vuestra parte.'), 'both')
+    + docxP(docxRun('Sin otro particular y esperando vernos atendidos en lo solicitado, reciban un cordial saludo.'), 'both')
+    + '<w:p/><w:p/><w:p/><w:p/><w:p/><w:p/>' + fin;
+  const enc = new TextEncoder();
+  const files = Object.keys(DOCX_PARTES_B64).map(n=>({ name:n, data:b64ABytes(DOCX_PARTES_B64[n]) }));
+  files.push({ name:'word/document.xml', data: enc.encode(DOCX_CAB + cuerpo) });
+  return zipSinComprimir(files);
+}
+function contextoCartaForm(){ return { cartaCargo: header.cartaCargo, lineas: lineas, numExpedicion: header.numExpedicion || '' }; }
+function contextoCartaInc(inc){ return { cartaCargo: inc.cartaCargo, lineas: inc.lineas, numExpedicion: inc.numExpedicion || '' }; }
+async function descargarCartaCargo(ctx, numero){
+  const d = datosCartaCargo(ctx);
+  if(d.faltan.length){ toast('Para generar la carta falta: ' + d.faltan.join('; ') + '.', 'error'); return; }
+  const downloads = await obtenerDescargas();
+  let bytes;
+  try{ bytes = buildCartaCargoDocx(Object.assign({}, ctx, { numero })); }catch(e){ toast('No se ha podido generar la carta de cargo.', 'error'); return; }
+  const blob = new Blob([bytes], { type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  const filename = `carta_cargo_${d.modelo.cod.replace(/\./g,'_')}_incidencia_${numero}_${todayISO()}.docx`;
+  try{
+    const res = await downloads.save({ filename, data: blob });
+    if(res && (res.status==='saved' || res.status==='delivered')) toast(`Carta de cargo ${d.modelo.cod} descargada.`);
+  }catch(err){
+    if(!err || err.code!=='declined'){ toast('No se ha podido descargar la carta de cargo.', 'error'); }
+  }
+}
+function generarCartaCargo(){
+  if(CLOUD && editingId==null){ toast('Guarda primero la incidencia: la carta lleva escrito su número de incidencia, que se asigna al guardar.', 'error'); return; }
+  descargarCartaCargo(contextoCartaForm(), editingId!=null ? editingId : nextIncidenciaNum);
+}
+function generarCartaCargoGuardada(incId){
+  const inc = incidencias.find(i=>i.id===incId);
+  if(!inc){ toast('No se encontró esa incidencia.', 'error'); return; }
+  descargarCartaCargo(contextoCartaInc(inc), inc.id);
+}
+function cambiarModeloCarta(cod){
+  header.cartaCargo = normCarta(Object.assign({}, header.cartaCargo, { modelo: cod }));
+  renderCartaCargoBox();
+}
+function cambiarCampoCarta(k, el){
+  const t = CARTA_CAMPOS[k];
+  const v = t.tipo==='exp' ? el.value.replace(/\D/g,'') : el.value.replace(/[^\d.,]/g,'');
+  if(v !== el.value) el.value = v;
+  let guardar = v;
+  if(k==='impCargo'){                      // si coincide con el importe por defecto (o se vacía), vuelve a ser automático
+    const dd = datosCartaCargo(Object.assign(contextoCartaForm(), { cartaCargo: Object.assign({}, header.cartaCargo, { impCargo:'' }) }));
+    const n = parseImporteCarta(v);
+    if(n == null || Math.abs(n - dd.totalDefecto) < 0.005) guardar = '';
+  }
+  header.cartaCargo = normCarta(Object.assign({}, header.cartaCargo, { [k]: guardar }));
+  actualizarHintCarta();
+}
+function restaurarImpCargoCarta(){
+  header.cartaCargo = normCarta(Object.assign({}, header.cartaCargo, { impCargo:'' }));
+  renderCartaCargoBox();
+}
+function actualizarHintCarta(){
+  const hint = document.getElementById('cartaHint'), btn = document.getElementById('btnCartaCargo');
+  if(!hint) return;
+  const d = datosCartaCargo(contextoCartaForm());
+  btn.hidden = !d.modelo || !d.modelo.disponible;
+  if(!d.modelo){ hint.textContent = ''; return; }
+  hint.textContent = d.faltan.length ? 'Falta: ' + d.faltan.join('; ') + '.' : (d.modelo.campos.includes('impCargo') ? `${d.lins.length} línea(s) · importe total del cargo ${fmtNumCarta(d.total)} €${d.manual ? ' (modificado a mano)' : ''}` : 'Datos completos: ya puedes descargar la carta.');
+  const est = document.getElementById('cartaImpCargoEstado'), bt = document.getElementById('btnCartaImpCargoAuto');
+  if(est){
+    const esLott = d.modelo && d.modelo.importe === 'lott';
+    est.textContent = d.manual ? `(modificado a mano · el calculado es ${fmtNumCarta(d.totalDefecto)} €)` : (esLott ? '(automático: LOTT = peso × constante, sumado de todas las líneas)' : (d.sinImporte ? `(automático · ${d.sinImporte} línea(s) sin importe a facturar a la agencia: elígelo en la línea, LOTT o % descuento)` : '(automático: suma del importe elegido en el cargo a la agencia, LOTT o % descuento)'));
+    est.style.color = d.manual ? 'var(--warn)' : '';
+  }
+  if(bt) bt.hidden = !d.manual;
+}
+function renderCartaCargoBox(){
+  const sel = document.getElementById('cartaModelo');
+  if(!sel) return;
+  if(!sel.dataset.init){
+    let h = '<option value="">— Sin carta de cargo —</option>', g = '';
+    CARTAS_CARGO.forEach(m=>{
+      if(m.grupo !== g){ if(g) h += '</optgroup>'; h += `<optgroup label="${escapeHtml(m.grupo)}">`; g = m.grupo; }
+      h += `<option value="${m.cod}"${m.disponible ? '' : ' disabled'}>${m.cod} · ${escapeHtml(m.titulo)}${m.disponible ? '' : ' (modelo pendiente de cargar)'}</option>`;
+    });
+    sel.innerHTML = h + '</optgroup>';
+    sel.dataset.init = '1';
+  }
+  const c = header.cartaCargo = normCarta(header.cartaCargo);
+  sel.value = c.modelo;
+  const m = CARTAS_CARGO.find(x=>x.cod===c.modelo);
+  const box = document.getElementById('cartaCampos');
+  const dev = String(header.numExpedicion||'').replace(/\D/g,'');
+  box.innerHTML = (m && m.campos ? m.campos : []).map(k=>{
+    const t = CARTA_CAMPOS[k];
+    if(t.auto){
+      const dd = datosCartaCargo(contextoCartaForm());
+      const val = c.impCargo || fmtNumCarta(dd.totalDefecto);
+      return `<div class="field"><label>${escapeHtml(t.label)}</label><input type="text" id="carta_impCargo" inputmode="decimal" maxlength="12" value="${escapeHtml(val)}" oninput="cambiarCampoCarta('impCargo', this)"></div>`;
+    }
+    const ph = k==='expDevol' && dev ? `Por defecto: ${dev} (comunicado)` : (t.tipo==='exp' ? 'Solo números' : '0,00');
+    return `<div class="field"><label>${escapeHtml(t.label)} <span class="req">*</span></label><input type="text" id="carta_${k}" inputmode="${t.tipo==='exp' ? 'numeric' : 'decimal'}" maxlength="${t.tipo==='exp' ? 20 : 12}" value="${escapeHtml(c[k])}" placeholder="${escapeHtml(ph)}" oninput="cambiarCampoCarta('${k}', this)"></div>`;
+  }).join('');
+  renderCartaLottBox();
+  const ex = document.getElementById('cartaIntroExtra');
+  if(ex) ex.textContent = !m ? '1.1 y 1.2 (perfecto estado) piden solo expediciones e importes de portes; 2.1 y 2.2 (con daños) y 3.1 y 3.2 (falta de mercancía) añaden el detalle de las líneas con «Cargo agencia = Sí».' : (m.campos.includes('impCargo') ? 'Los productos y unidades salen de las líneas con «Cargo agencia = Sí». En falta de mercancía el cargo es la LOTT (peso × constante). Nunca se suman los portes.' : 'Solo se pide el abono de portes: expediciones e importes. No lleva detalle de líneas ni cargo de mercancía.');
+  document.getElementById('cartaImpCargoFila').innerHTML = (m && m.campos && m.campos.includes('impCargo')) ? `<span class="hint" id="cartaImpCargoEstado"></span><button type="button" class="btn btn-sm" id="btnCartaImpCargoAuto" onclick="restaurarImpCargoCarta()" hidden>↺ Usar el importe marcado en el cargo a la agencia</button>` : '';
+  actualizarHintCarta();
+}
+function renderCartaLottBox(){
+  const box = document.getElementById('cartaLottBox');
+  if(!box) return;
+  const d = datosCartaCargo(contextoCartaForm());
+  if(!d.modelo || d.modelo.importe !== 'lott'){ box.hidden = true; box.innerHTML = ''; return; }
+  const c = header.cartaCargo;
+  box.hidden = false;
+  box.innerHTML = `<div style="font-weight:600;margin-bottom:4px;">Cálculo de la LOTT <span class="mod-log">(en falta de mercancía el cargo a la agencia es la LOTT: peso × constante)</span></div>
+    <div class="table-scroll"><table class="linea-detail-table">
+      <thead><tr><th>Código</th><th>Descripción</th><th class="num">Uds.</th><th class="num">Peso de la mercancía (kg)</th><th class="num">LOTT</th></tr></thead>
+      <tbody>${d.lins.map(l=>`<tr>
+        <td class="mono">${escapeHtml(l.ref)}</td><td>${escapeHtml(l.desc)}</td><td class="num mono">${l.uds}</td>
+        <td class="num"><input type="text" inputmode="decimal" maxlength="12" style="width:110px;text-align:right;" data-pesolott="${escapeHtml(String(l.id))}" value="${escapeHtml(String((c.pesos && c.pesos[l.id]) || (l.peso != null ? String(l.peso).replace('.', ',') : '')))}" placeholder="0,00" oninput="cambiarPesoCarta(this)"></td>
+        <td class="num mono" data-lottimp="${escapeHtml(String(l.id))}">${l.importeCargo != null ? fmtNumCarta(l.importeCargo) + ' €' : '—'}</td></tr>`).join('')}</tbody>
+    </table></div>
+    <div class="field" style="max-width:240px;margin-top:8px;"><label>Constante LOTT (€/kg)</label><input type="text" id="carta_constanteLott" inputmode="decimal" maxlength="12" value="${escapeHtml(c.constanteLott || String(CONSTANTE_LOTT_DEFECTO).replace('.', ','))}" oninput="cambiarConstanteLottCarta(this)"></div>`;
+}
+function refrescarCalculoLott(){
+  const d = datosCartaCargo(contextoCartaForm());
+  d.lins.forEach(l=>{
+    const td = document.querySelector('[data-lottimp="' + String(l.id).replace(/"/g, '') + '"]');
+    if(td) td.textContent = l.importeCargo != null ? fmtNumCarta(l.importeCargo) + ' €' : '—';
+  });
+  const inp = document.getElementById('carta_impCargo');
+  if(inp && !d.manual) inp.value = fmtNumCarta(d.totalDefecto);
+  actualizarHintCarta();
+}
+function cambiarPesoCarta(el){
+  const id = el.dataset.pesolott;
+  const v = el.value.replace(/[^\d.,]/g, '');
+  if(v !== el.value) el.value = v;
+  const pesos = Object.assign({}, header.cartaCargo.pesos || {});
+  if(v) pesos[id] = v; else delete pesos[id];
+  header.cartaCargo = normCarta(Object.assign({}, header.cartaCargo, { pesos }));
+  refrescarCalculoLott();
+}
+function cambiarConstanteLottCarta(el){
+  const v = el.value.replace(/[^\d.,]/g, '');
+  if(v !== el.value) el.value = v;
+  header.cartaCargo = normCarta(Object.assign({}, header.cartaCargo, { constanteLott: v }));
+  refrescarCalculoLott();
+}
+function buildCartaCargoReadonly(inc){
+  const c = normCarta(inc.cartaCargo), m = CARTAS_CARGO.find(x=>x.cod===c.modelo);
+  if(!m) return '';
+  const d = datosCartaCargo(contextoCartaInc(inc));
+  const tiene = k=> !!(m.campos && m.campos.includes(k));
+  const datos = [tiene('expOrig') && c.expOrig ? 'Exp. envío original ' + c.expOrig : '', tiene('impOrig') && c.impOrig ? 'portes envío original ' + c.impOrig + ' €' : '', tiene('expRepo') && c.expRepo ? 'Exp. reposición ' + c.expRepo : '', tiene('impRepo') && c.impRepo ? 'portes ' + c.impRepo + ' €' : '', tiene('expDevol') && d.c.expDevol ? 'Exp. devolución ' + d.c.expDevol : '', tiene('impDevol') && c.impDevol ? 'portes devolución ' + c.impDevol + ' €' : '', tiene('impCargo') && !d.faltan.length ? 'importe del cargo ' + fmtNumCarta(d.total) + ' €' : ''].filter(Boolean).map(escapeHtml).join(' · ');
+  return `<h4>Carta de cargo a la agencia</h4>
+    <div class="toolbar" style="margin-bottom:16px;">
+      <span class="pill pill-warn">Modelo ${m.cod}</span>
+      <span class="hint">${escapeHtml(m.titulo)}${datos ? ' · ' + datos : ''}${d.faltan.length ? ' · <b>falta: ' + escapeHtml(d.faltan.join('; ')) + '</b>' : ''}</span>
+      <div class="spacer"></div>
+      <button type="button" class="btn btn-sm btn-primary" data-dlcarta="${inc.id}">⬇ Descargar carta de cargo (Word)</button>
+    </div>`;
+}
+function renderDocsCargoCard(){
+  const card = document.getElementById('docsCargoCard');
+  if(!card) return;
+  const grid = document.getElementById('docsCargoGrid');
+  if(!grid.dataset.init){
+    grid.innerHTML = DOCS_CARGO.map(d=>`<div class="field">
+        <label>${escapeHtml(d.titulo)}${d.ayuda ? ` <span class="mod-log">(${escapeHtml(d.ayuda.toLowerCase())})</span>` : ''}</label>
+        <div class="dropzone" onclick="document.getElementById('file_${d.key}').click()">📎 Añadir archivo</div>
+        <input type="file" id="file_${d.key}" multiple hidden onchange="addFiles('header','${d.key}',this.files);this.value=''">
+        <div class="filelist" id="list_${d.key}"></div>
+      </div>`).join('');
+    grid.dataset.init = '1';
+  }
+  const hayDocs = DOCS_CARGO.some(d=> (header[d.key]||[]).length);
+  const hayCarta = !!(header.cartaCargo && header.cartaCargo.modelo);
+  card.hidden = !(lineasConCargoAgencia(lineas).length || hayDocs || hayCarta);   // aparece cuando hay cargo a la agencia (o ya hay documentos o carta)
+  if(card.hidden) return;
+  renderCartaCargoBox();
+  const nDocs = DOCS_CARGO.reduce((a,d)=> a + (header[d.key]||[]).length, 0);
+  const hd = document.getElementById('docsCargoHeadHint');
+  if(hd) hd.textContent = [nDocs ? `${nDocs} documento(s)` : '', hayCarta ? `carta ${header.cartaCargo.modelo}` : ''].filter(Boolean).join(' · ');
+  DOCS_CARGO.forEach(d=>{ if(!Array.isArray(header[d.key])) header[d.key] = []; renderFileListSolo(d.key, 'list_'+d.key); });
 }
 function renderFileList(key, domId){
+  renderFileListSolo(key, domId);
+  if(typeof renderComunicadoRecogidaBox === 'function') renderComunicadoRecogidaBox();
+}
+function renderFileListSolo(key, domId){
   const arr = header[key];
   const box = document.getElementById(domId);
-  if(!arr.length){ box.innerHTML=''; if(typeof renderComunicadoRecogidaBox === 'function') renderComunicadoRecogidaBox(); return; }
+  if(!box) return;
+  if(!arr.length){ box.innerHTML=''; return; }
   box.innerHTML = arr.map((f,i)=>`<div class="fileitem"><span>📄</span><span class="fname">${escapeHtml(f.name)}</span><span class="mod-log">${fmtSize(f.size)}</span><button class="dl" data-dlf="${i}" title="${(f.file||f.path)?'Descargar':'Solo consta el nombre del archivo (sin contenido guardado)'}" ${(f.file||f.path)?'':'disabled'}>⬇</button><button data-rmf="${i}" title="Quitar">✕</button></div>`).join('');
   box.querySelectorAll('[data-dlf]').forEach(b => b.addEventListener('click', ()=> descargarArchivo(arr[Number(b.dataset.dlf)])));
   box.querySelectorAll('[data-rmf]').forEach(b => b.addEventListener('click', ()=>{ arr.splice(Number(b.dataset.rmf),1); renderFileList(key, domId); }));
-  if(typeof renderComunicadoRecogidaBox === 'function') renderComunicadoRecogidaBox();
 }
 
 /* ================= DESCARGA DE ARCHIVOS (cabecera y líneas) ================= */
@@ -3461,6 +3883,7 @@ function persistIncidencias(){
       accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar), referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', numExpedicion: inc.numExpedicion || '', direccionRecogida: inc.direccionRecogida || '', empresaGrupo: inc.empresaGrupo || '', observaciones: inc.observaciones || '',
       comunicacionCliente: (inc.comunicacionCliente||[]).map(f=>({name:f.name,size:f.size})),
       documentos: (inc.documentos||[]).map(f=>({name:f.name,size:f.size})),
+      dcFacturaOriginal: (inc.dcFacturaOriginal||[]).map(f=>({name:f.name,size:f.size})), dcAlbaranOriginal: (inc.dcAlbaranOriginal||[]).map(f=>({name:f.name,size:f.size})), dcAlbaranReposicion: (inc.dcAlbaranReposicion||[]).map(f=>({name:f.name,size:f.size})), dcAbonoFactura: (inc.dcAbonoFactura||[]).map(f=>({name:f.name,size:f.size})), dcFacturaCargo: (inc.dcFacturaCargo||[]).map(f=>({name:f.name,size:f.size})), dcFotosDanos: (inc.dcFotosDanos||[]).map(f=>({name:f.name,size:f.size})), cartaCargo: normCarta(inc.cartaCargo),
       lineas: (inc.lineas||[]).map(l=>({
         id:l.id, codArticulo:l.codArticulo, descripcion:l.descripcion, unidadesAlbaran:l.unidadesAlbaran, precioUnitario:l.precioUnitario,
         origen:l.origen, estado:l.estado, incidQty:l.incidQty, motivoQty:l.motivoQty, submotivoQty:l.submotivoQty, casoQty:l.casoQty,
@@ -3538,7 +3961,6 @@ function validarCabecera(){
   if(!header.fechaComunicacion) errors.push({msg:'Indica la fecha de comunicación del cliente.', fieldId:'fechaComunicacion'});
   const activasVal = lineas.filter(l=>!l.eliminada);
   if(!activasVal.length) errors.push({msg:'Debe quedar al menos una línea (del albarán o añadida manualmente).', fieldId:null});
-  if(lineasConCargoAgencia(activasVal).length && !String(header.numExpedicion||'').replace(/\D/g,'')) errors.push({msg:'Indica el nº de expedición (apartado «Comunicado de recogida a la agencia»): hay líneas con cargo a la agencia.', fieldId:'numExpedicion'});
   const sinOrigen = activasVal.filter(l=>!l.origen);
   if(sinOrigen.length) errors.push({msg:`Indica el Origen en cada línea (edítala) — falta en: ${sinOrigen.map(l=>l.codArticulo).join(', ')}.`, fieldId:null});
   // Dos comprobaciones distintas sobre el mismo albarán + artículo, mirando otras incidencias ya
@@ -3581,6 +4003,7 @@ function focusInvalid(fieldId){
   if(!fieldId) return;
   const el = document.getElementById(fieldId);
   if(!el) return;
+  [['comunicadoRecogidaWrap','comunicadoRecogida'],['docsCargoWrap','docsCargo']].forEach(([w,k])=>{ const wr = document.getElementById(w); if(wr && wr.contains(el) && wr.hidden){ seccionesColapsables[k] = true; aplicarVisibilidadSeccionesColapsables(); } });
   if(typeof el.scrollIntoView === 'function') el.scrollIntoView({behavior:'smooth', block:'center'});
   el.classList.add('invalid');
   if(typeof el.focus === 'function') el.focus();
@@ -3612,9 +4035,11 @@ async function guardarIncidencia(){
     t.manualEnEspera = header.manualEnEspera;
     t.comunicacionCliente = header.comunicacionCliente.slice();
     t.documentos = header.documentos.slice();
+    DOCS_CARGO_KEYS.forEach(k=>{ t[k] = (header[k]||[]).slice(); });
+    t.cartaCargo = normCarta(header.cartaCargo);
     t.observaciones = header.observaciones || '';
     t.referenciaCliente = (header.referenciaCliente || '').trim().slice(0,30);
-    t.clienteFinal = (header.clienteFinal || '').trim().slice(0,30);
+    t.clienteFinal = (header.clienteFinal || '').trim().slice(0,80);
     t.personaContacto = (header.personaContacto || '').trim().slice(0,60);
     t.telefonoContacto = (header.telefonoContacto || '').trim().slice(0,20);
     t.numExpedicion = String(header.numExpedicion || '').replace(/\D/g,'').slice(0,20);
@@ -3655,9 +4080,10 @@ async function guardarIncidencia(){
     estado: computeHeaderEstado(activas, header.manualEnEspera),
     comunicacionCliente: header.comunicacionCliente.slice(),
     documentos: header.documentos.slice(),
+    dcFacturaOriginal: header.dcFacturaOriginal.slice(), dcAlbaranOriginal: header.dcAlbaranOriginal.slice(), dcAlbaranReposicion: header.dcAlbaranReposicion.slice(), dcAbonoFactura: header.dcAbonoFactura.slice(), dcFacturaCargo: header.dcFacturaCargo.slice(), dcFotosDanos: header.dcFotosDanos.slice(), cartaCargo: normCarta(header.cartaCargo),
     observaciones: header.observaciones || '',
     referenciaCliente: (header.referenciaCliente || '').trim().slice(0,30),
-    clienteFinal: (header.clienteFinal || '').trim().slice(0,30),
+    clienteFinal: (header.clienteFinal || '').trim().slice(0,80),
     personaContacto: (header.personaContacto || '').trim().slice(0,60),
     telefonoContacto: (header.telefonoContacto || '').trim().slice(0,20),
     numExpedicion: String(header.numExpedicion || '').replace(/\D/g,'').slice(0,20),
@@ -3700,6 +4126,7 @@ function editarIncidencia(id){
     manualEnEspera: inc.manualEnEspera,
     comunicacionCliente: inc.comunicacionCliente.map(f=> Object.assign({}, f)),
     documentos: inc.documentos.map(f=> Object.assign({}, f)),
+    dcFacturaOriginal: (inc.dcFacturaOriginal||[]).map(f=> Object.assign({}, f)), dcAlbaranOriginal: (inc.dcAlbaranOriginal||[]).map(f=> Object.assign({}, f)), dcAlbaranReposicion: (inc.dcAlbaranReposicion||[]).map(f=> Object.assign({}, f)), dcAbonoFactura: (inc.dcAbonoFactura||[]).map(f=> Object.assign({}, f)), dcFacturaCargo: (inc.dcFacturaCargo||[]).map(f=> Object.assign({}, f)), dcFotosDanos: (inc.dcFotosDanos||[]).map(f=> Object.assign({}, f)), cartaCargo: normCarta(inc.cartaCargo),
     accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar),
     referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', numExpedicion: inc.numExpedicion || '', direccionRecogida: inc.direccionRecogida || '', empresaGrupo: inc.empresaGrupo || '',
     observaciones: inc.observaciones || ''
@@ -3757,7 +4184,7 @@ function toggleSeccionColapsable(key){
   aplicarVisibilidadSeccionesColapsables();
 }
 function aplicarVisibilidadSeccionesColapsables(){
-  const map = { datosComunes:['datosComunesWrap','btnToggleDatosComunes'], accionRealizar:['accionRealizarWrap','btnToggleAccionRealizar'] };
+  const map = { datosComunes:['datosComunesWrap','btnToggleDatosComunes'], accionRealizar:['accionRealizarWrap','btnToggleAccionRealizar'], comunicadoRecogida:['comunicadoRecogidaWrap','btnToggleComunicado'], docsCargo:['docsCargoWrap','btnToggleDocsCargo'] };
   Object.keys(map).forEach(key=>{
     const [wrapId, btnId] = map[key];
     const wrap = document.getElementById(wrapId);
@@ -3769,7 +4196,7 @@ function aplicarVisibilidadSeccionesColapsables(){
   });
 }
 function resetSeccionesColapsables(){
-  seccionesColapsables = { datosComunes:false, accionRealizar:false };
+  seccionesColapsables = { datosComunes:false, accionRealizar:false, comunicadoRecogida:false, docsCargo:false };
 }
 function renderAll(){
   document.getElementById('fechaApertura').value = header.fechaApertura;
@@ -3856,6 +4283,7 @@ function aplicarCambioAccionLinea(cont, l, nuevoTipo){
   l.accion = nuevoTipo;
 }
 function tablaAccionHtml(tipo, lineasBloque){
+  const esDesestimada = tipo==='desestimada';
   if(tipo==='abono'){
     const filas = lineasBloque.map(l=> Object.assign({l}, importeAbonoLinea(l)));
     const total = filas.reduce((s,f)=> s+f.importe, 0);
@@ -3877,7 +4305,7 @@ function tablaAccionHtml(tipo, lineasBloque){
   return `
     <div class="table-scroll">
       <table class="linea-detail-table">
-        <thead><tr><th>Código</th><th>Descripción</th><th class="num">Cant. a reponer</th><th>Motivo</th></tr></thead>
+        <thead><tr><th>Código</th><th>Descripción</th><th class="num">${esDesestimada ? 'Cant. desestimada' : 'Cant. a reponer'}</th><th>Motivo</th></tr></thead>
         <tbody>${lineasBloque.map(l=>{
           const qty = qtyLineaAccion(l);
           const motivo = [l.motivoQty, l.casoQty].filter(Boolean).join(' / ') || '—';
@@ -3917,12 +4345,12 @@ function renderAccionesRealizar(){
             <button type="button" class="btn btn-sm btn-danger" data-rmaccion="${b.id}" title="Quitar esta acción (las líneas volverán a estar disponibles)">✕ Quitar</button>
           </div>
           ${tablaAccionHtml(b.tipo, lineasDeBloqueConQty(b, lineasBloque))}
-          <div class="toolbar" style="margin-top:12px;">
+          ${(ACCIONES_INCIDENCIA.find(a=>a.cod===b.tipo)||{}).sinImpreso ? `<div class="hint" style="margin-top:10px;">Reclamación desestimada por no proceder: queda registrada en el historial de la incidencia y no genera impreso.</div>` : `<div class="toolbar" style="margin-top:12px;">
             <div class="spacer"></div>
             <button type="button" class="btn btn-sm" onclick="notificarEnvioPendiente('WhatsApp')">🟢 Enviar por WhatsApp</button>
             <button type="button" class="btn btn-sm" onclick="notificarEnvioPendiente('email')">✉️ Enviar por email</button>
             <button type="button" class="btn btn-primary btn-sm" onclick="generarImpresoAccion('${b.id}')">⬇ Descargar impreso de ${accionDesc(b.tipo).toLowerCase()}</button>
-          </div>
+          </div>`}
         </div>`;
     }).join('');
     listBox.querySelectorAll('[data-rmaccion]').forEach(btn=> btn.addEventListener('click', ()=> eliminarAccionRealizar(btn.dataset.rmaccion)));
@@ -4401,6 +4829,7 @@ function buildImpresoCambioPdf(marcadas, numIncidencia, clienteObj, albaranObj, 
 async function generarImpresoAccion(bloqueId){
   const bloque = (header.accionesRealizar||[]).find(b=>b.id===bloqueId);
   if(!bloque){ toast('No se encontró esa acción a realizar.', 'error'); return; }
+  if(bloque.tipo==='desestimada'){ toast('Una reclamación desestimada no genera impreso.', 'error'); return; }
   const lineasBloque = bloque.lineaIds.map(id=> lineas.find(l=>l.id===id)).filter(Boolean);
   if(!lineasBloque.length){ toast('Esta acción no tiene líneas asociadas.', 'error'); return; }
   const downloads = await obtenerDescargas();
@@ -4425,6 +4854,7 @@ async function generarImpresoAccionGuardada(incId, bloqueId){
   if(!inc){ toast('No se encontró esa incidencia.', 'error'); return; }
   const bloque = (inc.accionesRealizar||[]).find(b=>b.id===bloqueId);
   if(!bloque){ toast('No se encontró esa acción a realizar.', 'error'); return; }
+  if(bloque.tipo==='desestimada'){ toast('Una reclamación desestimada no genera impreso.', 'error'); return; }
   const lineasBloque = bloque.lineaIds.map(id=> inc.lineas.find(l=>l.id===id)).filter(Boolean);
   if(!lineasBloque.length){ toast('Esta acción no tiene líneas asociadas.', 'error'); return; }
   const downloads = await obtenerDescargas();
@@ -4535,20 +4965,21 @@ function buildComunicadoRecogidaDocx(ctx){
   const alb = ctx.albaran || {};
   const direccion = String(ctx.direccionRecogida || '').trim() || alb.direccionEntrega || '';   // la indicada en la incidencia; si no, la del albarán
   let cuerpo = lm ? DOCX_CUERPO_LM : DOCX_CUERPO_GEN;
+  /* Persona y teléfono de contacto van justo debajo de la dirección de recogida (se sacan del final de la plantilla y se
+     colocan tras la dirección). Si están en blanco no aparecen. El nº de expedición ocupa el sitio que dejan al final. */
+  const persona = String(ctx.personaContacto || '').trim(), telefono = String(ctx.telefonoContacto || '').trim();
+  const exped = String(ctx.numExpedicion || '').replace(/\D/g,'');
+  const iniContacto = docxInicioParrafo(cuerpo, '{{PERSONA}}');
+  let contacto = '';
+  if(persona) contacto += docxParrafoCampo('Persona de contacto:', persona);
+  if(telefono) contacto += docxParrafoCampo('Tfono de contacto:', telefono);
+  cuerpo = docxQuitarParrafo(docxQuitarParrafo(cuerpo, '{{PERSONA}}'), '{{TELEFONO}}');
+  if(exped && iniContacto >= 0) cuerpo = cuerpo.slice(0, iniContacto) + docxParrafoCampo('Nº de expedición:', exped) + cuerpo.slice(iniContacto);
   cuerpo = cuerpo
-    .replace('{{DIR}}', ()=>docxParrafos(direccion))
+    .replace('{{DIR}}', ()=>docxParrafos(direccion) + contacto)
     .replace('{{TABLA}}', ()=>docxTablaProductos(filas))
     .split('{{NUM}}').join(xmlEsc(String(ctx.numero==null?'':ctx.numero)))
     .replace('{{REF}}', ()=>docxParrafo(ctx.referenciaCliente||''));
-  /* Nº de expedición (si lo hay) justo antes de los datos de contacto; persona y teléfono en blanco no aparecen en el documento. */
-  const exped = String(ctx.numExpedicion || '').replace(/\D/g,'');
-  if(exped){
-    const ini = docxInicioParrafo(cuerpo, '{{PERSONA}}');
-    if(ini >= 0) cuerpo = cuerpo.slice(0, ini) + docxParrafoCampo('Nº de expedición:', exped) + cuerpo.slice(ini);
-  }
-  const persona = String(ctx.personaContacto || '').trim(), telefono = String(ctx.telefonoContacto || '').trim();
-  cuerpo = persona ? cuerpo.replace('{{PERSONA}}', ()=>xmlEsc(persona)) : docxQuitarParrafo(cuerpo, '{{PERSONA}}');
-  cuerpo = telefono ? cuerpo.replace('{{TELEFONO}}', ()=>xmlEsc(telefono)) : docxQuitarParrafo(cuerpo, '{{TELEFONO}}');
   const enc = new TextEncoder();
   const files = Object.keys(DOCX_PARTES_B64).map(n=>({ name:n, data:b64ABytes(DOCX_PARTES_B64[n]) }));
   files.push({ name:'word/document.xml', data: enc.encode(DOCX_CAB + cuerpo) });
@@ -4567,6 +4998,7 @@ function contextoComunicadoInc(inc){
 }
 async function descargarComunicadoRecogida(ctx, numero, cont){
   if(!lineasParaComunicadoRecogida(ctx.lineas).length){ toast('Ninguna línea tiene la recogida notificada.', 'error'); return; }
+  if(lineasConCargoAgencia(ctx.lineas).length && !String(ctx.numExpedicion||'').replace(/\D/g,'')){ toast('Indica el nº de expedición: hay líneas con cargo a la agencia y el comunicado debe llevarlo.', 'error'); return; }
   const downloads = await obtenerDescargas();
   let r;
   try{ r = buildComunicadoRecogidaDocx(Object.assign({}, ctx, { numero })); }catch(e){ toast('No se ha podido generar el comunicado de recogida.', 'error'); return; }
@@ -4708,12 +5140,22 @@ function prepararOpcionesRecogidaLM(cont, ctx){
   est.textContent = adj ? `✔ Se montará con el adjunto «${adj.name}».` : '⚠ Falta el adjunto «documento recogida LM» (PDF): adjúntalo en «Documentos a adjuntar»; sin él solo se descarga el Word.';
 }
 function modeloComunicadoTexto(ctx){ return esLeroyMerlin(ctx.cliente && ctx.cliente.nombre, ctx.clienteFinal) ? 'modelo Leroy Merlin' : 'modelo general'; }
+function actualizarAvisoSeccionesPosteriores(){
+  const av = document.getElementById('avisoSeccionesPosteriores');
+  if(!av) return;
+  const c1 = document.getElementById('comunicadoRecogidaCard'), c2 = document.getElementById('docsCargoCard');
+  av.hidden = !(lineas.some(l=>!l.eliminada) && c1 && c2 && c1.hidden && c2.hidden);
+}
 function renderComunicadoRecogidaBox(){
+  renderDocsCargoCard();
   const card = document.getElementById('comunicadoRecogidaCard');
   if(!card) return;
   const n = lineasParaComunicadoRecogida(lineas).length;
   const nCargo = lineasConCargoAgencia(lineas).length;
-  card.hidden = n === 0 && nCargo === 0;     // también se muestra si hay cargo a la agencia, para poder indicar el nº de expedición
+  card.hidden = n === 0;     // solo aparece cuando hay recogida notificada (se gestiona al editar la incidencia, cuando toque)
+  actualizarAvisoSeccionesPosteriores();
+  const hh = document.getElementById('comunicadoHeadHint');
+  if(hh){ const faltaExp = nCargo > 0 && !String(header.numExpedicion||'').replace(/\D/g,''); hh.textContent = faltaExp ? '⚠ Falta el nº de expedición (obligatorio con cargo a la agencia)' : (n ? `${n} línea(s) con recogida notificada` : ''); hh.style.color = faltaExp ? 'var(--danger)' : ''; }
   const bxLM = card.querySelector('[data-rec-lm]');
   if(!n && bxLM) bxLM.dataset.init = '';
   if(card.hidden) return;
@@ -5044,7 +5486,7 @@ function renderConsulta(){
   document.getElementById('consultaCount').textContent = `${list.length} incidencia(s) de ${incidencias.length}`;
   const tbody = document.getElementById('consultaTbody');
   if(!list.length){
-    tbody.innerHTML = `<tr><td colspan="16"><div class="empty-state">No hay incidencias que coincidan con los filtros aplicados.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="17"><div class="empty-state">No hay incidencias que coincidan con los filtros aplicados.</div></td></tr>`;
     return;
   }
   const expandedVisible = expandedId!=null && list.some(i=>i.id===expandedId);
@@ -5093,6 +5535,10 @@ function cablearDetalleConsulta(tbody){
       e.stopPropagation();
       generarComunicadoRecogidaGuardado(Number(b.dataset.dlcomunicado), b.closest('.expand-panel') || b.parentElement);
     }));
+    tbody.querySelectorAll('[data-dlcarta]').forEach(b => b.addEventListener('click', e=>{
+      e.stopPropagation();
+      generarCartaCargoGuardada(Number(b.dataset.dlcarta));
+    }));
     [['data-docstoggle', 'docsAnexList_', almDocsAbiertas], ['data-obstoggle', 'obsCabList_', almObsAbiertas]].forEach(([attr, pref, set])=>{
       tbody.querySelectorAll('[' + attr + ']').forEach(b => b.addEventListener('click', e=>{
         e.stopPropagation();
@@ -5108,7 +5554,8 @@ function cablearDetalleConsulta(tbody){
       const [incId, key, idx] = b.dataset.dlfile.split('|');
       const inc = incidencias.find(i=>i.id===Number(incId));
       if(!inc) return;
-      descargarArchivo(inc[key][Number(idx)]);
+      const f = archivoDeClave(inc, key, Number(idx));
+      if(f) descargarArchivo(f);
     }));
     tbody.querySelectorAll('[data-alm-ver]').forEach(b => b.addEventListener('click', e=>{
       e.stopPropagation();
@@ -5138,6 +5585,8 @@ function resumenDocsLinea(inc, l, conIncidencia){
     if(nCom) p.push(`${nCom} comunicación${nCom>1?'es':''} del cliente`);
     if(nDoc) p.push(`${nDoc} documento${nDoc>1?'s':''} adjunto${nDoc>1?'s':''} a la incidencia`);
     if(nAlm) p.push(`${nAlm} foto${nAlm>1?'s':''} de almacén`);
+    const nCg = docsCargoDeInc(inc);
+    if(nCg) p.push(`${nCg} documento${nCg>1?'s':''} de cargo a la agencia`);
   }
   return p.join(' · ');
 }
@@ -5203,7 +5652,7 @@ function buildFileListReadonly(files, incId, key){
   </div>`).join('');
 }
 function buildExpandRow(inc, cols){
-  return `<tr class="expand-panel"><td colspan="${cols || 16}"><div class="expand-inner">
+  return `<tr class="expand-panel"><td colspan="${cols || 17}"><div class="expand-inner">
     <div class="toolbar" style="margin-bottom:14px;">
       <div class="spacer"></div>
       <button class="btn btn-sm btn-primary" data-editinc="${inc.id}">✎ Editar incidencia</button>
@@ -5271,6 +5720,7 @@ function buildExpandRow(inc, cols){
     </div>
 
     ${buildComunicadoRecogidaReadonly(inc)}
+    ${buildCartaCargoReadonly(inc)}
 
     ${buildDocsAnexadosReadonly(inc)}
 
@@ -6196,11 +6646,45 @@ document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && almVisor) alm
 /* ---------- fotos en la pestaña Consulta (oficina) ---------- */
 const almDocsAbiertas = new Set();   // incidencias con el bloque «Documentos anexados» desplegado en Consulta (sobrevive al repintado)
 const almObsAbiertas = new Set();   // incidencias con las observaciones de cabecera desplegadas en Consulta
+/* Documentos de cada línea (documentación del artículo, fotos del defecto y documentos del cargo a la agencia), para verlos y descargarlos
+   desde Consulta sin abrir la línea ni editar la incidencia. La clave de descarga es «lin:<id de línea>:<campo>». */
+function docsDeLinea(l){
+  const r = l.recepcion || {};
+  return [
+    { campo:'adjuntos', titulo:'Documentación del artículo', files: l.adjuntos || [] },
+    { campo:'fotosDefecto', titulo:'Fotos del defecto', files: r.fotosDefecto || [] },
+    { campo:'fotosParte', titulo:'Documentos del cargo a la agencia', files: r.fotosParte || [] }
+  ].filter(g=> g.files.length);
+}
+function archivoDeClave(inc, key, idx){
+  if(String(key).startsWith('lin:')){
+    const [, lid, campo] = String(key).split(':');
+    const l = (inc.lineas || []).find(x=> String(x.id) === lid);
+    if(!l) return null;
+    return campo === 'adjuntos' ? (l.adjuntos || [])[idx] : ((l.recepcion || {})[campo] || [])[idx];
+  }
+  return (inc[key] || [])[idx];
+}
+function buildDocsLineasReadonly(inc){
+  const grupos = (inc.lineas || []).filter(l=> !l.eliminada).map(l=> ({ l, g: docsDeLinea(l) })).filter(x=> x.g.length);
+  if(!grupos.length) return { html:'', total:0 };
+  const total = grupos.reduce((n, x)=> n + x.g.reduce((m, g)=> m + g.files.length, 0), 0);
+  const html = `<div class="field" style="margin-bottom:14px;">
+      <label style="margin:0;">Documentos de las líneas (${total})</label>
+      ${grupos.map(({l, g})=>`<div style="margin-top:8px;">
+        <div class="mod-log" style="font-size:12.5px;"><b>${escapeHtml(l.codArticulo)}</b> — ${escapeHtml(l.descripcion || '')}</div>
+        ${g.map(x=>`<div style="margin:4px 0 0 12px;"><span class="mod-log" style="font-size:11.5px;">${x.titulo}</span><div class="filelist" style="margin-top:2px;">${buildFileListReadonly(x.files, inc.id, 'lin:' + l.id + ':' + x.campo)}</div></div>`).join('')}
+      </div>`).join('')}
+    </div>`;
+  return { html, total };
+}
 function buildDocsAnexadosReadonly(inc){
   const fs = almFotosDe(inc.id);
   const ord = fs.slice().sort((a, b)=> String(b.fecha || '').localeCompare(String(a.fecha || '')));
   const abierto = almDocsAbiertas.has(inc.id);
-  const total = fs.length + (inc.comunicacionCliente || []).length + (inc.documentos || []).length;
+  const dl = buildDocsLineasReadonly(inc);
+  const dcTotal = docsCargoDeInc(inc);
+  const total = fs.length + (inc.comunicacionCliente || []).length + (inc.documentos || []).length + dl.total + dcTotal;
   return `<div class="historial-block" style="margin-bottom:16px;">
       <button type="button" class="historial-toggle" data-docstoggle="${inc.id}">
         <span class="historial-arrow">${abierto ? '▾' : '▸'}</span> 📎 Documentos anexados <span class="badge-count">${total}</span>
@@ -6216,6 +6700,13 @@ function buildDocsAnexadosReadonly(inc){
             <div class="filelist" style="margin-top:6px;">${buildFileListReadonly(inc.documentos || [], inc.id, 'documentos')}</div>
           </div>
         </div>
+        ${dl.html}
+        ${dcTotal ? `<div class="field" style="margin-bottom:14px;">
+          <label style="margin:0;">Documentos de cargo a la agencia (${dcTotal})</label>
+          <div class="detail-grid" style="margin-top:6px;">
+            ${DOCS_CARGO.filter(d=> (inc[d.key]||[]).length).map(d=>`<div class="field"><span class="mod-log" style="font-size:11.5px;">${escapeHtml(d.titulo)}</span><div class="filelist" style="margin-top:2px;">${buildFileListReadonly(inc[d.key], inc.id, d.key)}</div></div>`).join('')}
+          </div>
+        </div>` : ''}
         <div class="field">
           <label style="margin:0;">📷 Fotos de almacén (${fs.length})</label>
           ${fs.length ? `<div class="alm-fotos alm-ro" style="margin-top:6px;">${ord.map(f=> almFotoTileHtml(inc, f)).join('')}</div>`
