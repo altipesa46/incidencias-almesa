@@ -1197,7 +1197,8 @@ function normalizaUrl(u){
   return m ? m[1] : u;
 }
 async function boot(){
-  if (!CFG.SUPABASE_URL || !CFG.SUPABASE_ANON_KEY || /TU-PROYECTO|PEGA_AQUI/.test(CFG.SUPABASE_URL + CFG.SUPABASE_ANON_KEY) || !window.supabase){ showConfigMissing(); return; }
+  if (!window.supabase){ gate(`<div class="eyebrow">Almesa · Plan estratégico</div><h1>No se pudo cargar Supabase</h1><p>El navegador no ha podido descargar la librería de Supabase. Recarga con Ctrl + F5. Si continúa, prueba en otro navegador o revisa si la red de la empresa bloquea cdn.jsdelivr.net.</p>`); return; }
+  if (!CFG.SUPABASE_URL || !CFG.SUPABASE_ANON_KEY || /TU-PROYECTO|PEGA_AQUI/.test(CFG.SUPABASE_URL + CFG.SUPABASE_ANON_KEY)){ showConfigMissing(); return; }
   sb = window.supabase.createClient(normalizaUrl(CFG.SUPABASE_URL), String(CFG.SUPABASE_ANON_KEY).trim(), { auth: { persistSession: true, autoRefreshToken: true } });
   buildMs(); bindStatic(); bindView();
   const { data: { session } } = await sb.auth.getSession();
