@@ -198,6 +198,10 @@
   /* La flecha de orden no participa en el salto de línea: así todas las cabeceras quedan alineadas abajo */
   #view-consulta thead th.th-sortable{position:relative;padding-right:14px;}
   #view-consulta thead th.th-sortable .sort-arrow{position:absolute;right:3px;bottom:8px;margin-left:0;}
+  .info-rec-linea{margin-top:6px;font-size:11px;line-height:1.35;color:var(--text-muted);white-space:nowrap;}
+  .info-rec-linea b{font-weight:600;color:var(--text);}
+  .info-rec-sit{font-weight:600;color:var(--text-muted);}
+  .info-rec-sit.venc{color:var(--danger,#b3261e);}
   /* Consulta Cabecera: letra más pequeña (misma escala compacta que Consulta líneas) */
   #view-consulta thead th{font-size:10px;letter-spacing:.03em;}
   #consultaTbody > tr.consulta-row > td{font-size:11.5px;line-height:1.3;padding:6px 6px;}
@@ -506,9 +510,6 @@
   .fila-destruida td{opacity:.55;}
   #destruccionTbody td .sub-line{display:block;font-size:11px;color:var(--text-faint);font-family:inherit;margin-top:2px;white-space:normal;}
   .chk-destruida{width:20px;height:20px;cursor:pointer;accent-color:var(--accent);}
-  .info-rec-lista{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:0;}
-  .info-rec-lista dt{color:var(--text-muted);font-weight:600;}
-  .info-rec-lista dd{margin:0;font-weight:600;}
   .badge-count{background:var(--surface-2);color:var(--text-muted);border-radius:100px;padding:2px 9px;font-size:11.5px;font-weight:700;}
 
   .toast-wrap{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;}
@@ -1200,13 +1201,6 @@
 </div>
 
 <!-- ============ MODAL: + INFO (recepción y destrucción) ============ -->
-<div class="modal-overlay" id="modalInfoRec">
-  <div class="modal w-sm">
-    <div class="modal-head"><h3 id="modalInfoRecTit">Más información</h3><button onclick="closeModal('modalInfoRec')">✕</button></div>
-    <div class="modal-body" id="modalInfoRecBody"></div>
-    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal('modalInfoRec')">Cerrar</button></div>
-  </div>
-</div>
 
 <!-- ============ MODAL: EXPORTAR A EXCEL ============ -->
 <div class="modal-overlay" id="modalExportExcel">
@@ -2189,18 +2183,12 @@ function plazoDestruccionTexto(inc){
   if(dd < 0) return `Vencida hace ${-dd} día${dd === -1 ? '' : 's'}`;
   return `Faltan ${dd} día${dd === 1 ? '' : 's'}`;
 }
-function mostrarInfoRecepcion(id){
-  const inc = incidencias.find(i=> i.id === id); if(!inc) return;
-  const fd = fechaDestruccionDe(inc);
-  document.getElementById('modalInfoRecTit').textContent = `Incidencia #${inc.id} · recepción y destrucción`;
-  document.getElementById('modalInfoRecBody').innerHTML = inc.fechaRecepcion
-    ? `<dl class="info-rec-lista">
-        <dt>Recepción en Almesa</dt><dd>${fmtDate(inc.fechaRecepcion)}</dd>
-        <dt>Fecha de destrucción</dt><dd>${fd ? fmtDate(fd) : '—'} <span class="mod-log">(recepción + ${DIAS_PLAZO_DESTRUCCION} días)</span></dd>
-        <dt>Situación</dt><dd>${escapeHtml(plazoDestruccionTexto(inc) || '—')}</dd>
-      </dl>`
-    : `<p style="margin:0;line-height:1.5;">Todavía no se ha registrado la recepción de la mercancía en Almesa. La fecha se anota desde el módulo de almacén cuando se hace la recogida.</p>`;
-  openModal('modalInfoRec');
+/* Recepción en Almesa y fecha de destrucción, para mostrar bajo el chip de Recogida de cada línea (solo si la línea tiene recogida notificada o entregada) */
+function infoRecepcionLineaHtml(inc, l){
+  if(!l || (l.recogida !== 'Notificada recogida' && l.recogida !== 'Recogida entregada')) return '';
+  if(!esFechaISO(inc.fechaRecepcion)) return '<div class="info-rec-linea"><span class="mod-log">Recepción en Almesa: pendiente</span></div>';
+  const fd = fechaDestruccionDe(inc), sit = plazoDestruccionTexto(inc);
+  return `<div class="info-rec-linea"><div><b>Recepción en Almesa:</b> ${fmtDate(inc.fechaRecepcion)}</div><div><b>Destrucción:</b> ${fd ? fmtDate(fd) : '—'}</div>${sit ? `<div class="info-rec-sit${paraDestruccion(inc) && !inc.destruida ? ' venc' : ''}">${escapeHtml(sit)}</div>` : ''}</div>`;
 }
 function marcarDestruida(id, valor){
   const inc = incidencias.find(i=> i.id === id); if(!inc) return;
@@ -5888,7 +5876,7 @@ function renderConsulta(){
       <td class="mono">${inc.albaran ? escapeHtml(String(inc.albaran.numAlbaran)) : '<span class="mod-log">Sin albarán</span>'}${refClienteDe(inc) ? `<span class="sub-line" title="Referencia del cliente">Ref: ${escapeHtml(refClienteDe(inc))}</span>` : ''}</td>
       <td>${origenesChipsHtml(inc.origenes)}</td>
       <td>${estadoPill(inc.estado)}</td>
-      <td>${recogidasChipsHtml(inc.recogidas)}${almPerfilPill(inc)}<div style="margin-top:4px;"><button type="button" class="btn btn-sm" data-infoinc="${inc.id}" title="Fecha de recepción en Almesa y fecha de destrucción">+ info</button>${inc.destruida ? ' <span class="pill pill-muted">Destruida</span>' : ''}</div></td>
+      <td>${recogidasChipsHtml(inc.recogidas)}${almPerfilPill(inc)}${inc.destruida ? '<div style="margin-top:4px;"><span class="pill pill-muted">Destruida</span></div>' : ''}</td>
       <td>${cargoAgenciaPill(inc.cargoAgencia)}</td>
       ${ACCIONES_INCIDENCIA.map(a=>`<td class="num">${lineasConAccionCount(inc, a.cod)}</td>`).join('')}
       <td class="num">${inc.lineas.length}</td>
@@ -5901,7 +5889,6 @@ function renderConsulta(){
     expandedId = (expandedId===id) ? null : id;
     renderConsulta();
   }));
-  tbody.querySelectorAll('[data-infoinc]').forEach(b => b.addEventListener('click', e=>{ e.stopPropagation(); mostrarInfoRecepcion(Number(b.dataset.infoinc)); }));
   tbody.querySelectorAll('[data-delinc]').forEach(b => b.addEventListener('click', e=>{
     e.stopPropagation();
     eliminarIncidencia(Number(b.dataset.delinc));
@@ -6096,7 +6083,7 @@ function buildExpandRow(inc, cols){
             <td>${escapeHtml(l.motivoQty||'—')}${(l.submotivoQty || l.casoQty) ? `<span class="sub-line" title="Submotivo y caso">${[l.submotivoQty, l.casoQty].filter(Boolean).map(escapeHtml).join(' · ')}</span>` : ''}</td>
             <td class="num mono">${l.incidPvp!=null?fmtMoney(l.incidPvp):'—'}</td>
             <td>${(()=>{ const d=accionesDescLinea(inc.accionesRealizar, l.id); return d?`<span class="pill pill-warn">${escapeHtml(d)}</span>`:'<span class="mod-log">—</span>'; })()}</td>
-            <td>${recogidaPill(l.recogida)}</td>
+            <td>${recogidaPill(l.recogida)}${infoRecepcionLineaHtml(inc, l)}</td>
             <td>${cargoAgenciaPill(l.cargoAgencia)}</td>
             <td>${(l.adjuntos&&l.adjuntos.length)?`📎 ${l.adjuntos.length}`:'<span class="mod-log">—</span>'}</td>
             <td>${(l.observaciones&&l.observaciones.trim())?`<span title="${escapeHtml(l.observaciones)}">📝</span>`:'<span class="mod-log">—</span>'}</td>
