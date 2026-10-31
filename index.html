@@ -947,31 +947,31 @@
           <h2>Para destrucción</h2>
           <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
             <span class="hint" id="destruccionCount"></span>
-            <select id="destruccionVista" onchange="renderConsulta()" style="width:auto;" title="Qué incidencias mostrar">
+            <select id="destruccionVista" onchange="renderConsulta()" style="width:auto;" title="Qué líneas mostrar">
               <option value="pend">Pendientes de destruir</option>
               <option value="hechas">Ya destruidas</option>
               <option value="todas">Todas</option>
             </select>
           </div>
         </div>
-        <div class="hint" style="padding:0 20px 10px;">Incidencias cuya fecha de destrucción (fecha de recepción en Almesa + 15 días) ya ha llegado. Marca el cuadro cuando la mercancía se haya destruido. Se filtra con los mismos filtros de arriba y se ordena pulsando cualquier cabecera.</div>
+        <div class="hint" style="padding:0 20px 10px;">Líneas cuya fecha de destrucción (fecha de recepción en Almesa de la línea + 15 días) ya ha llegado. Cada línea se destruye y se marca por separado: marca el cuadro cuando esa mercancía se haya destruido. Se filtra con los mismos filtros de arriba y se ordena pulsando cualquier cabecera.</div>
         <div class="table-scroll">
           <table id="destruccionTable">
             <thead>
               <tr>
-                <th style="width:70px;" class="th-sortable" id="thDesDestruida" onclick="ordenarConsulta('destruida')" title="Marca las que ya se han destruido">Destruida<span class="sort-arrow"></span></th>
+                <th style="width:70px;" class="th-sortable" id="thDesDestruida" onclick="ordenarConsulta('destruida')" title="Marca las líneas que ya se han destruido">Destruida<span class="sort-arrow"></span></th>
                 <th class="th-sortable" id="thDesId" onclick="ordenarConsulta('id')">Nº<span class="sort-arrow"></span></th>
+                <th>Artículo</th>
+                <th class="num">Uds.</th>
                 <th class="th-sortable" id="thDesFRecepcion" onclick="ordenarConsulta('fechaRecepcion')">F. recepción Almesa<span class="sort-arrow"></span></th>
                 <th class="th-sortable" id="thDesFDestruccion" onclick="ordenarConsulta('fechaDestruccion')">F. destrucción<span class="sort-arrow"></span></th>
                 <th class="th-sortable" id="thDesFApertura" onclick="ordenarConsulta('fechaApertura')">F. apertura<span class="sort-arrow"></span></th>
                 <th class="th-sortable" id="thDesFComunicacion" onclick="ordenarConsulta('fechaComunicacion')">F. comunicación<span class="sort-arrow"></span></th>
                 <th class="th-sortable" id="thDesCliente" onclick="ordenarConsulta('cliente')">Cliente<span class="sort-arrow"></span></th>
                 <th class="th-sortable" id="thDesAlbaran" onclick="ordenarConsulta('albaran')">Nº Albarán<span class="sort-arrow"></span></th>
-                <th>Orígenes</th>
+                <th>Origen</th>
                 <th>Estado</th>
                 <th>Recogida</th>
-                <th>Cargo agencia</th>
-                <th class="num">Líneas</th>
                 <th style="width:60px;"></th>
               </tr>
             </thead>
@@ -1843,7 +1843,7 @@ function comprobarSesionGuardada(){
 if(!CLOUD) comprobarSesionGuardada();
 
 function emptyHeader(){
-  return { fechaRecepcion:'', fechaApertura: todayISO(), fechaComunicacion:'', cliente:null, albaran:null,
+  return { fechaApertura: todayISO(), fechaComunicacion:'', cliente:null, albaran:null,
     manualEnEspera:false, comunicacionCliente:[], documentos:[], dcFacturaOriginal:[], dcAlbaranOriginal:[], dcAlbaranReposicion:[], dcAbonoFactura:[], dcFacturaCargo:[], dcFotosDanos:[], cartaCargo:{modelo:'',expRepo:'',impRepo:'',expDevol:'',impDevol:''}, accionesRealizar:[], observaciones:'', referenciaCliente:'', clienteFinal:'', empresaGrupo:'', personaContacto:'', telefonoContacto:'', numExpedicion:'', direccionRecogida:'' };
 }
 const ACCIONES_INCIDENCIA = [
@@ -2194,37 +2194,98 @@ function diasHastaISO(iso){
   const [y, m, d] = iso.split('-').map(Number), [y2, m2, d2] = todayISO().split('-').map(Number);
   return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(y2, m2 - 1, d2)) / 86400000);
 }
-function fechaDestruccionDe(inc){ return inc && esFechaISO(inc.fechaRecepcion) ? sumarDiasISO(inc.fechaRecepcion, DIAS_PLAZO_DESTRUCCION) : ''; }
-function paraDestruccion(inc){ const f = fechaDestruccionDe(inc); return !!f && f <= todayISO(); }
-function pendientesDestruccion(){ return incidencias.filter(i=> paraDestruccion(i) && !i.destruida); }
+/* La fecha de recepción en Almesa es DE CADA LÍNEA (la agencia puede entregar una reclamación en varias veces). Si una línea no tiene fecha propia
+   usa la general de la incidencia (la que registra almacén al abrir la recogida). La cabecera muestra la fecha si es una sola o «Varias fechas». */
+const RECOGIDAS_CON_RECEPCION = ['Notificada recogida', 'Recogida entregada'];
+function lineaConRecepcion(l){ return !!l && !l.eliminada && RECOGIDAS_CON_RECEPCION.includes(l.recogida); }
+function fechaRecepcionLinea(inc, l){
+  if(l && esFechaISO(l.fechaRecepcion)) return l.fechaRecepcion;
+  return inc && esFechaISO(inc.fechaRecepcion) ? inc.fechaRecepcion : '';
+}
+function fechasRecepcionInc(inc){
+  if(!inc) return [];
+  const rel = (inc.lineas || []).filter(lineaConRecepcion);
+  let f = rel.map(l=> fechaRecepcionLinea(inc, l)).filter(Boolean);
+  if(!rel.length && esFechaISO(inc.fechaRecepcion)) f = [inc.fechaRecepcion];
+  return Array.from(new Set(f)).sort();
+}
+function recepcionResumenTexto(inc){ const f = fechasRecepcionInc(inc); return !f.length ? '' : (f.length === 1 ? fmtDate(f[0]) : 'Varias fechas'); }
+function fechaRecepcionUltima(inc){ const f = fechasRecepcionInc(inc); return f.length ? f[f.length - 1] : ''; }
+/* La marca «destruida» es de la incidencia entera: su plazo se cuenta desde la ÚLTIMA entrega, para no destruir nunca mercancía antes de sus 15 días */
+function fechaDestruccionDe(inc){ const u = fechaRecepcionUltima(inc); return u ? sumarDiasISO(u, DIAS_PLAZO_DESTRUCCION) : ''; }
+/* La destrucción es POR LÍNEA: cada línea con recogida notificada/entregada se destruye a los 15 días de SU recepción y se marca por separado.
+   inc.destruida queda como resumen (true solo si todas sus líneas con recogida están destruidas). Datos antiguos: sin marca propia, la línea hereda la de la incidencia. */
+function lineaDestruida(inc, l){ return l && l.destruida !== undefined ? !!l.destruida : !!(inc && inc.destruida); }
+function fechaDestruccionLinea(inc, l){ const fr = fechaRecepcionLinea(inc, l); return fr ? sumarDiasISO(fr, DIAS_PLAZO_DESTRUCCION) : ''; }
+function lineaParaDestruccion(inc, l){ if(!lineaConRecepcion(l)) return false; const f = fechaDestruccionLinea(inc, l); return !!f && f <= todayISO(); }
+function paraDestruccion(inc){ return (inc.lineas || []).some(l=> lineaParaDestruccion(inc, l)); }
+function lineasDestruccion(inc, vista){
+  return (inc.lineas || []).filter(l=>{
+    if(!lineaConRecepcion(l)) return false;
+    const due = lineaParaDestruccion(inc, l), done = lineaDestruida(inc, l);
+    if(vista === 'pend') return due && !done;
+    if(vista === 'hechas') return done;
+    return due || done;
+  });
+}
+function pendientesDestruccion(){ return incidencias.reduce((a, i)=> a.concat(lineasDestruccion(i, 'pend')), []); }
 function actualizarContadorDestruccion(){
   const b = document.getElementById('tabDestruccionCnt'); if(!b) return;
   const n = pendientesDestruccion().length;
   b.hidden = !n; b.textContent = String(n);
 }
-function plazoDestruccionTexto(inc){
-  if(inc.destruida) return `Destruida${inc.destruidaFecha ? ' el ' + fmtDate(inc.destruidaFecha) : ''}`;
-  const f = fechaDestruccionDe(inc); if(!f) return '';
-  const dd = diasHastaISO(f);
+function plazoDestruccionTexto(inc, fd, l){
+  if(l ? lineaDestruida(inc, l) : inc.destruida){
+    const df = (l && l.destruidaFecha) || inc.destruidaFecha;
+    return `Destruida${df ? ' el ' + fmtDate(df) : ''}`;
+  }
+  if(fd === undefined) fd = fechaDestruccionDe(inc);
+  if(!fd) return '';
+  const dd = diasHastaISO(fd);
   if(dd === 0) return 'Vence hoy';
   if(dd < 0) return `Vencida hace ${-dd} día${dd === -1 ? '' : 's'}`;
   return `Faltan ${dd} día${dd === 1 ? '' : 's'}`;
 }
-/* Recepción en Almesa y fecha de destrucción, para mostrar bajo el chip de Recogida de cada línea (solo si la línea tiene recogida notificada o entregada) */
+/* Recepción en Almesa y fecha de destrucción de CADA línea, bajo su chip de Recogida (solo si la línea tiene recogida notificada o entregada) */
 function infoRecepcionLineaHtml(inc, l){
-  if(!l || (l.recogida !== 'Notificada recogida' && l.recogida !== 'Recogida entregada')) return '';
-  if(!esFechaISO(inc.fechaRecepcion)) return '<div class="info-rec-linea"><span class="mod-log">Recepción en Almesa: pendiente</span></div>';
-  const fd = fechaDestruccionDe(inc), sit = plazoDestruccionTexto(inc);
-  return `<div class="info-rec-linea"><div><b>Recepción en Almesa:</b> ${fmtDate(inc.fechaRecepcion)}</div><div><b>Destrucción:</b> ${fd ? fmtDate(fd) : '—'}</div>${sit ? `<div class="info-rec-sit${paraDestruccion(inc) && !inc.destruida ? ' venc' : ''}">${escapeHtml(sit)}</div>` : ''}</div>`;
+  if(!l || !RECOGIDAS_CON_RECEPCION.includes(l.recogida)) return '';
+  const fr = fechaRecepcionLinea(inc, l);
+  if(!fr) return '<div class="info-rec-linea"><span class="mod-log">Recepción en Almesa: pendiente</span></div>';
+  const fd = sumarDiasISO(fr, DIAS_PLAZO_DESTRUCCION), sit = plazoDestruccionTexto(inc, fd, l);
+  return `<div class="info-rec-linea"><div><b>Recepción en Almesa:</b> ${fmtDate(fr)}</div><div><b>Destrucción:</b> ${fmtDate(fd)}</div>${sit ? `<div class="info-rec-sit${fd <= todayISO() && !lineaDestruida(inc, l) ? ' venc' : ''}">${escapeHtml(sit)}</div>` : ''}</div>`;
 }
-function marcarDestruida(id, valor){
-  const inc = incidencias.find(i=> i.id === id); if(!inc) return;
-  inc.destruida = !!valor; inc.destruidaFecha = valor ? todayISO() : '';
+/* Cabecera de Consulta: una sola fecha de recepción si todas las líneas coinciden; si no, «Varias fechas» */
+function recepcionCabeceraHtml(inc){
+  const f = fechasRecepcionInc(inc); if(!f.length) return '';
+  const t = f.length === 1 ? fmtDate(f[0]) : 'Varias fechas';
+  return `<div class="info-rec-linea"${f.length > 1 ? ` title="${escapeHtml(f.map(fmtDate).join(' · '))}"` : ''}><b>Recepción:</b> ${escapeHtml(t)}</div>`;
+}
+function recalcDestruidaInc(inc){
+  const rel = (inc.lineas || []).filter(lineaConRecepcion);
+  const hechas = rel.filter(l=> lineaDestruida(inc, l));
+  inc.destruida = rel.length > 0 && hechas.length === rel.length;
+  inc.destruidaFecha = inc.destruida ? (hechas.map(l=> l.destruidaFecha || '').sort().pop() || todayISO()) : '';
+}
+function marcarLineaDestruida(incId, linId, valor){
+  const inc = incidencias.find(i=> i.id === incId); if(!inc) return;
+  const l = (inc.lineas || []).find(x=> String(x.id) === String(linId)); if(!l) return;
+  const heredada = !!inc.destruida;   // datos antiguos: la marca era de toda la incidencia
+  inc.lineas.forEach(x=>{ if(x.destruida === undefined){ x.destruida = heredada; if(heredada) x.destruidaFecha = x.destruidaFecha || inc.destruidaFecha || ''; } });
+  l.destruida = !!valor; l.destruidaFecha = valor ? todayISO() : '';
+  recalcDestruidaInc(inc);
   if(!Array.isArray(inc.historial)) inc.historial = [];
-  inc.historial.push({ fecha: new Date().toISOString(), usuario: state.usuario || '—', cambio: valor ? 'Mercancía marcada como destruida' : 'Quitada la marca de mercancía destruida' });
+  inc.historial.push({ fecha: new Date().toISOString(), usuario: state.usuario || '—', cambio: `Línea ${l.codArticulo}: ${valor ? 'mercancía marcada como destruida' : 'quitada la marca de mercancía destruida'}` });
   persistIncidencias();
   actualizarContadorDestruccion();
   renderConsulta();
+}
+/* Etiqueta de la cabecera de Consulta: «Destruida» si lo están todas las líneas con recogida, «Destruidas n/m» si solo algunas */
+function destruccionPillCabecera(inc){
+  const rel = (inc.lineas || []).filter(lineaConRecepcion);
+  if(!rel.length) return inc.destruida ? '<div style="margin-top:4px;"><span class="pill pill-muted">Destruida</span></div>' : '';
+  const n = rel.filter(l=> lineaDestruida(inc, l)).length;
+  if(!n) return '';
+  return `<div style="margin-top:4px;"><span class="pill pill-muted">${n === rel.length ? 'Destruida' : `Destruidas ${n}/${rel.length}`}</span></div>`;
 }
 function verIncidenciaDesdeDestruccion(id){
   limpiarFiltros();
@@ -2235,33 +2296,42 @@ function verIncidenciaDesdeDestruccion(id){
 function renderConsultaDestruccion(list){
   const tbody = document.getElementById('destruccionTbody');
   const vista = document.getElementById('destruccionVista').value;
-  document.getElementById('destruccionCount').textContent = `${list.length} incidencia(s)`;
-  if(!list.length){
-    const msg = vista === 'hechas' ? 'Todavía no hay incidencias marcadas como destruidas.' : (vista === 'pend' ? 'No hay incidencias pendientes de destruir con los filtros aplicados.' : 'No hay incidencias para destrucción con los filtros aplicados.');
+  // Una fila por LÍNEA (cada línea se destruye por separado)
+  let filas = [];
+  list.forEach(inc=> lineasDestruccion(inc, vista).forEach(l=> filas.push({ inc, l })));
+  const campo = consultaSort.field, mul = consultaSort.dir === 'desc' ? -1 : 1;
+  if(campo === 'fechaRecepcion' || campo === 'fechaDestruccion' || campo === 'destruida'){
+    const val = f => campo === 'fechaRecepcion' ? (fechaRecepcionLinea(f.inc, f.l) || '9999-99-99') : (campo === 'fechaDestruccion' ? (fechaDestruccionLinea(f.inc, f.l) || '9999-99-99') : (lineaDestruida(f.inc, f.l) ? '1' : '0'));
+    filas = filas.map((f, k)=> ({ f, k })).sort((a, b)=> (String(val(a.f)).localeCompare(String(val(b.f))) * mul) || (a.k - b.k)).map(x=> x.f);
+  }
+  document.getElementById('destruccionCount').textContent = `${filas.length} línea(s)`;
+  if(!filas.length){
+    const msg = vista === 'hechas' ? 'Todavía no hay líneas marcadas como destruidas.' : (vista === 'pend' ? 'No hay líneas pendientes de destruir con los filtros aplicados.' : 'No hay líneas para destrucción con los filtros aplicados.');
     tbody.innerHTML = `<tr><td colspan="14"><div class="empty-state">${msg}</div></td></tr>`;
     return;
   }
-  tbody.innerHTML = list.map(inc=>{
-    const fd = fechaDestruccionDe(inc), plazo = plazoDestruccionTexto(inc);
-    const dd = fd ? diasHastaISO(fd) : 0;
-    return `<tr class="${inc.destruida ? 'fila-destruida' : ''}" data-id="${inc.id}">
-      <td style="text-align:center;"><input type="checkbox" class="chk-destruida" data-destruida="${inc.id}" ${inc.destruida ? 'checked' : ''} title="${inc.destruida ? 'Destruida: quita la marca si fue un error' : 'Marcar como destruida'}" aria-label="Destruida"></td>
+  tbody.innerHTML = filas.map(({ inc, l })=>{
+    const fr = fechaRecepcionLinea(inc, l), fd = fechaDestruccionLinea(inc, l), hecha = lineaDestruida(inc, l);
+    const plazo = plazoDestruccionTexto(inc, fd, l), dd = fd ? diasHastaISO(fd) : 0;
+    const uds = l.incidQty != null ? l.incidQty : l.unidadesAlbaran;
+    return `<tr class="${hecha ? 'fila-destruida' : ''}" data-id="${inc.id}" data-lin="${escapeHtml(String(l.id))}">
+      <td style="text-align:center;"><input type="checkbox" class="chk-destruida" data-destruida="${inc.id}" data-destruida-lin="${escapeHtml(String(l.id))}" ${hecha ? 'checked' : ''} title="${hecha ? 'Destruida: quita la marca si fue un error' : 'Marcar esta línea como destruida'}" aria-label="Destruida"></td>
       <td class="mono">#${inc.id}<span class="sub-line" title="Usuario que la creó">👤 ${escapeHtml(inc.usuario)}</span></td>
-      <td>${fmtDate(inc.fechaRecepcion)}</td>
-      <td>${fmtDate(fd)}<span class="sub-line" ${(!inc.destruida && dd < 0) ? 'style="color:var(--danger);font-weight:600;"' : ''}>${escapeHtml(plazo)}</span></td>
+      <td><b class="mono">${escapeHtml(String(l.codArticulo))}</b><span class="sub-line">${escapeHtml(l.descripcion || '')}</span></td>
+      <td class="num">${uds != null ? uds : ''}</td>
+      <td>${fr ? fmtDate(fr) : '—'}</td>
+      <td>${fd ? fmtDate(fd) : '—'}<span class="sub-line" ${(!hecha && dd < 0) ? 'style="color:var(--danger);font-weight:600;"' : ''}>${escapeHtml(plazo)}</span></td>
       <td>${fmtDate(inc.fechaApertura)}</td>
       <td>${fmtDate(inc.fechaComunicacion)}</td>
       <td class="col-cliente">${inc.empresaGrupo ? `<span class="tag-empresa" title="Empresa">${escapeHtml(inc.empresaGrupo)}</span>` : ''}${escapeHtml(inc.cliente.nombre)}${inc.clienteFinal ? `<span class="sub-line" title="Cliente final">➜ ${escapeHtml(inc.clienteFinal)}</span>` : ''}</td>
       <td class="mono">${inc.albaran ? escapeHtml(String(inc.albaran.numAlbaran)) : '<span class="mod-log">Sin albarán</span>'}${refClienteDe(inc) ? `<span class="sub-line" title="Referencia del cliente">Ref: ${escapeHtml(refClienteDe(inc))}</span>` : ''}</td>
-      <td>${origenesChipsHtml(inc.origenes)}</td>
-      <td>${estadoPill(inc.estado)}</td>
-      <td>${recogidasChipsHtml(inc.recogidas)}</td>
-      <td>${cargoAgenciaPill(inc.cargoAgencia)}</td>
-      <td class="num">${inc.lineas.length}</td>
+      <td>${origenesChipsHtml(l.origen ? [l.origen] : [])}</td>
+      <td>${estadoPill(l.estado)}</td>
+      <td>${recogidaPill(l.recogida)}</td>
       <td><button type="button" class="btn btn-sm" data-verinc="${inc.id}" title="Abrir el detalle en Consulta">Ver</button></td>
     </tr>`;
   }).join('');
-  tbody.querySelectorAll('[data-destruida]').forEach(c=> c.addEventListener('change', ()=> marcarDestruida(Number(c.dataset.destruida), c.checked)));
+  tbody.querySelectorAll('[data-destruida]').forEach(c=> c.addEventListener('change', ()=> marcarLineaDestruida(Number(c.dataset.destruida), c.dataset.destruidaLin, c.checked)));
   tbody.querySelectorAll('[data-verinc]').forEach(b=> b.addEventListener('click', ()=> verIncidenciaDesdeDestruccion(Number(b.dataset.verinc))));
 }
 
@@ -3195,12 +3265,12 @@ function buildLineaModalBody(l, bloques){
     </div>
 
     ${(modalLineaCtx && (modalLineaCtx.source !== 'nueva' || editingId != null)) ? (()=>{
-      const incF = modalLineaCtx.source === 'nueva' ? header : (incidencias.find(i=>i.id===modalLineaCtx.incidenciaId) || {});
-      const fr = esFechaISO(incF.fechaRecepcion) ? incF.fechaRecepcion : '';
+      const incF = incidencias.find(i=> i.id === (modalLineaCtx.source === 'nueva' ? editingId : modalLineaCtx.incidenciaId)) || {};
+      const fr = fechaRecepcionLinea(incF, l);
       const fd = fr ? sumarDiasISO(fr, DIAS_PLAZO_DESTRUCCION) : '';
       return `<div class="field span2" id="ld_fechaRecepBox">
       <div class="divider" style="margin:2px 0 14px 0;"></div>
-      <span class="section-label">Recepción en Almesa y destrucción</span>
+      <span class="section-label">Recepción en Almesa y destrucción de esta línea</span>
       <div class="recep-fila" style="align-items:flex-start;">
         <div class="field" style="flex:0 0 190px;">
           <label for="ld_fechaRecepcion" style="min-height:0;">Fecha de recepción en Almesa</label>
@@ -3210,7 +3280,10 @@ function buildLineaModalBody(l, bloques){
           <label for="ld_fechaDestruccion" style="min-height:0;">Fecha de destrucción (+${DIAS_PLAZO_DESTRUCCION} días)</label>
           <input type="text" id="ld_fechaDestruccion" value="${fd ? fmtDate(fd) : ''}" placeholder="—" readonly disabled>
         </div>
-        <div class="hint" style="flex:1 1 240px;align-self:flex-end;padding-bottom:11px;margin:0;">Es una fecha de toda la incidencia (no de la línea): si la cambias aquí, cambia para todas sus líneas. Déjala vacía si la mercancía aún no ha llegado.${modalLineaCtx.source === 'nueva' ? ' Se guarda al pulsar «Guardar cambios» de la incidencia.' : ''}</div>
+        <div style="flex:1 1 260px;align-self:flex-end;padding-bottom:4px;">
+          <label style="font-weight:400;display:flex;align-items:center;gap:6px;margin-bottom:4px;"><input type="checkbox" id="ld_fechaTodas"> Poner esta misma fecha a todas las líneas con recogida de la incidencia</label>
+          <div class="hint" style="margin:0;">Cada línea tiene su fecha por si la agencia entrega en varias veces. Si no la cambias, la línea usa la fecha que registró almacén.${modalLineaCtx.source === 'nueva' ? ' Se guarda al pulsar «Guardar cambios» de la incidencia.' : ''}</div>
+        </div>
       </div>
     </div>`;
     })() : ''}
@@ -3606,6 +3679,7 @@ function diffCambiosLinea(before, after){
   if(before.incidPvp !== after.incidPvp) cambios.push(`Incid. PVP: ${before.incidPvp!=null?fmtMoney(before.incidPvp):'—'} → ${after.incidPvp!=null?fmtMoney(after.incidPvp):'—'}`);
   if((before.accion||null) !== (after.accion||null)) cambios.push(`Acción de línea: ${accionDesc(before.accion)} → ${accionDesc(after.accion)}`);
   if((before.recogida||null) !== (after.recogida||null)) cambios.push(`Recogida de línea: ${before.recogida||'—'} → ${after.recogida||'—'}`);
+  if((before.fechaRecepcion||'') !== (after.fechaRecepcion||'')) cambios.push(`Fecha de recepción: ${esFechaISO(before.fechaRecepcion) ? fmtDate(before.fechaRecepcion) : '—'} → ${esFechaISO(after.fechaRecepcion) ? fmtDate(after.fechaRecepcion) : '—'}`);
   if((before.cargoAgencia||null) !== (after.cargoAgencia||null)) cambios.push(`Cargo agencia de línea: ${before.cargoAgencia||'—'} → ${after.cargoAgencia||'—'}`);
   const beforeAdj = (before.adjuntos||[]).length, afterAdj = (after.adjuntos||[]).length;
   if(beforeAdj !== afterAdj) cambios.push(`Adjuntos de línea: ${beforeAdj} → ${afterAdj}`);
@@ -3659,6 +3733,8 @@ function guardarLineaDetalle(){
   const before = JSON.parse(JSON.stringify(l));
   const ldFRsave = document.getElementById('ld_fechaRecepcion');
   const fechaRecepNueva = ldFRsave ? (esFechaISO(ldFRsave.value) ? ldFRsave.value : '') : null;
+  const ldTodas = document.getElementById('ld_fechaTodas');
+  const aplicarFechaTodas = !!(ldTodas && ldTodas.checked);
 
   if(l.manual){
     const unidadesRaw = document.getElementById('ld_unidadesManual').value;
@@ -3759,22 +3835,26 @@ function guardarLineaDetalle(){
 
   l.lastMod = { usuario: state.usuario || '—', fecha: new Date().toISOString() };
 
+  // Fecha de recepción en Almesa DE ESTA LÍNEA (vacía = vuelve a usar la general de la incidencia)
+  let fechaAplicadaATodas = false;
+  if(fechaRecepNueva !== null){
+    const incBase = incidencias.find(i=> i.id === (source==='nueva' ? editingId : incidenciaId)) || {};
+    if(fechaRecepNueva !== fechaRecepcionLinea(incBase, before)) l.fechaRecepcion = fechaRecepNueva;
+    if(aplicarFechaTodas && fechaRecepNueva){
+      const arrLin = source==='nueva' ? lineas : (incBase.lineas || []);
+      arrLin.forEach(x=>{ if(x !== l && lineaConRecepcion(x) && fechaRecepcionLinea(incBase, x) !== fechaRecepNueva){ x.fechaRecepcion = fechaRecepNueva; fechaAplicadaATodas = true; } });
+    }
+  }
+
   closeModal('modalLinea');
   if(source==='nueva'){
-    // En modo edición, la fecha de recepción se aplica a la incidencia al pulsar «Guardar cambios» de la incidencia
-    if(fechaRecepNueva !== null) header.fechaRecepcion = fechaRecepNueva;
     renderAll();
   } else {
     const inc = incidencias.find(i=>i.id===incidenciaId);
     const cambiosLinea = diffCambiosLinea(before, l);
     const descCambio = cambiosLinea.length ? `Línea ${l.codArticulo}: ${cambiosLinea.join('; ')}` : `Línea ${l.codArticulo} revisada (sin cambios de datos detectados).`;
     inc.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: descCambio });
-    // Fecha de recepción en Almesa (es de la incidencia entera: se guarda con la incidencia, igual que el resto de datos de la línea)
-    if(fechaRecepNueva !== null && fechaRecepNueva !== (esFechaISO(inc.fechaRecepcion) ? inc.fechaRecepcion : '')){
-      const antes = esFechaISO(inc.fechaRecepcion) ? fmtDate(inc.fechaRecepcion) : 'sin fecha';
-      inc.fechaRecepcion = fechaRecepNueva;
-      inc.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: `Fecha de recepción en Almesa: ${fechaRecepNueva ? fmtDate(fechaRecepNueva) : 'quitada'} (antes: ${antes}), cambiada desde la línea ${l.codArticulo}` });
-    }
+    if(fechaAplicadaATodas) inc.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: `Fecha de recepción en Almesa ${fmtDate(fechaRecepNueva)} aplicada a todas las líneas con recogida` });
     recomputeIncidenciaHeader(inc);
     persistIncidencias();
     actualizarContadorDestruccion();
@@ -4436,9 +4516,6 @@ async function guardarIncidencia(){
     t.numExpedicion = String(header.numExpedicion || '').replace(/\D/g,'').slice(0,20);
     t.direccionRecogida = (header.direccionRecogida || '').trim().slice(0,250);
     t.empresaGrupo = header.empresaGrupo || '';
-    const frNueva = esFechaISO(header.fechaRecepcion) ? header.fechaRecepcion : '';
-    const frAntes = esFechaISO(inc.fechaRecepcion) ? inc.fechaRecepcion : '';
-    t.fechaRecepcion = frNueva;
     t.lineas = activas.map(l=> Object.assign({}, l, {marcada:false}));
     t.estado = computeHeaderEstado(activas, header.manualEnEspera);
     t.recogida = computeHeaderRecogida(activas);
@@ -4447,7 +4524,6 @@ async function guardarIncidencia(){
     t.origenes = origenesDistintos(activas);
     t.accionesRealizar = cloneAccionesRealizar(header.accionesRealizar);
     t.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: diffCambiosIncidencia(beforeInc, t) });
-    if(frNueva !== frAntes) t.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: `Fecha de recepción en Almesa: ${frNueva ? fmtDate(frNueva) : 'quitada'} (antes: ${frAntes ? fmtDate(frAntes) : 'sin fecha'})` });
     if(CLOUD){
       try{ await nubeGuardar(t); }
       catch(e){ nubeError(e, inc); return; }
@@ -4522,7 +4598,6 @@ function editarIncidencia(id){
     comunicacionCliente: inc.comunicacionCliente.map(f=> Object.assign({}, f)),
     documentos: inc.documentos.map(f=> Object.assign({}, f)),
     dcFacturaOriginal: (inc.dcFacturaOriginal||[]).map(f=> Object.assign({}, f)), dcAlbaranOriginal: (inc.dcAlbaranOriginal||[]).map(f=> Object.assign({}, f)), dcAlbaranReposicion: (inc.dcAlbaranReposicion||[]).map(f=> Object.assign({}, f)), dcAbonoFactura: (inc.dcAbonoFactura||[]).map(f=> Object.assign({}, f)), dcFacturaCargo: (inc.dcFacturaCargo||[]).map(f=> Object.assign({}, f)), dcFotosDanos: (inc.dcFotosDanos||[]).map(f=> Object.assign({}, f)), cartaCargo: normCarta(inc.cartaCargo),
-    fechaRecepcion: esFechaISO(inc.fechaRecepcion) ? inc.fechaRecepcion : '',
     accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar),
     referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', numExpedicion: inc.numExpedicion || '', direccionRecogida: inc.direccionRecogida || '', empresaGrupo: inc.empresaGrupo || '',
     observaciones: inc.observaciones || ''
@@ -5822,7 +5897,7 @@ function ordenarListaConsulta(list){
     if(field==='fechaComunicacion') return inc.fechaComunicacion || '';
     if(field==='cliente') return (inc.cliente && inc.cliente.nombre) || '';
     if(field==='albaran') return inc.albaran ? inc.albaran.numAlbaran : -Infinity;
-    if(field==='fechaRecepcion') return inc.fechaRecepcion || '9999-99-99';
+    if(field==='fechaRecepcion') return fechaRecepcionUltima(inc) || '9999-99-99';
     if(field==='fechaDestruccion') return fechaDestruccionDe(inc) || '9999-99-99';
     if(field==='destruida') return inc.destruida ? 1 : 0;
     return inc.id;
@@ -5895,10 +5970,8 @@ function renderConsulta(){
   const list = incidencias.filter(inc=>{
     if(!cabOk(inc)) return false;
     if(modo === 'destruccion'){
-      // solo las que ya han llegado a su fecha de destrucción (o ya están marcadas como destruidas)
-      if(!(paraDestruccion(inc) || inc.destruida)) return false;
-      if(vistaDes === 'pend' && (inc.destruida || !paraDestruccion(inc))) return false;
-      if(vistaDes === 'hechas' && !inc.destruida) return false;
+      // solo incidencias con alguna línea que ya haya llegado a su fecha de destrucción (o ya destruida), según la vista elegida
+      if(!lineasDestruccion(inc, vistaDes).length) return false;
     }
     if(modo === 'lineas') return !hayFiltroLinea || (inc.lineas||[]).some(l=> lineaOk(inc, l));
     // Consulta Cabecera: las reglas de línea se resuelven a nivel de incidencia, como siempre
@@ -5945,7 +6018,7 @@ function renderConsulta(){
       <td class="mono">${inc.albaran ? escapeHtml(String(inc.albaran.numAlbaran)) : '<span class="mod-log">Sin albarán</span>'}${refClienteDe(inc) ? `<span class="sub-line" title="Referencia del cliente">Ref: ${escapeHtml(refClienteDe(inc))}</span>` : ''}</td>
       <td>${origenesChipsHtml(inc.origenes)}</td>
       <td>${estadoPill(inc.estado)}</td>
-      <td>${recogidasChipsHtml(inc.recogidas)}${almPerfilPill(inc)}${inc.destruida ? '<div style="margin-top:4px;"><span class="pill pill-muted">Destruida</span></div>' : ''}</td>
+      <td>${recogidasChipsHtml(inc.recogidas)}${recepcionCabeceraHtml(inc)}${almPerfilPill(inc)}${destruccionPillCabecera(inc)}</td>
       <td>${cargoAgenciaPill(inc.cargoAgencia)}</td>
       ${ACCIONES_INCIDENCIA.map(a=>`<td class="num">${lineasConAccionCount(inc, a.cod)}</td>`).join('')}
       <td class="num">${inc.lineas.length}</td>
