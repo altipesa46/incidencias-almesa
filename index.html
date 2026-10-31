@@ -1843,7 +1843,7 @@ function comprobarSesionGuardada(){
 if(!CLOUD) comprobarSesionGuardada();
 
 function emptyHeader(){
-  return { fechaApertura: todayISO(), fechaComunicacion:'', cliente:null, albaran:null,
+  return { fechaRecepcion:'', fechaApertura: todayISO(), fechaComunicacion:'', cliente:null, albaran:null,
     manualEnEspera:false, comunicacionCliente:[], documentos:[], dcFacturaOriginal:[], dcAlbaranOriginal:[], dcAlbaranReposicion:[], dcAbonoFactura:[], dcFacturaCargo:[], dcFotosDanos:[], cartaCargo:{modelo:'',expRepo:'',impRepo:'',expDevol:'',impDevol:''}, accionesRealizar:[], observaciones:'', referenciaCliente:'', clienteFinal:'', empresaGrupo:'', personaContacto:'', telefonoContacto:'', numExpedicion:'', direccionRecogida:'' };
 }
 const ACCIONES_INCIDENCIA = [
@@ -3194,8 +3194,8 @@ function buildLineaModalBody(l, bloques){
       ${accionMultiple ? `<span class="hint" style="display:block;margin-top:4px;">Esta línea tiene varias acciones asignadas a la vez, cada una sobre una cantidad distinta de sus unidades. Este campo no permite editarlas todas juntas: para quitar o cambiar alguna, usa «✕ Quitar» sobre esa acción en «Acción a realizar».</span>` : ''}
     </div>
 
-    ${(modalLineaCtx && modalLineaCtx.source !== 'nueva') ? (()=>{
-      const incF = incidencias.find(i=>i.id===modalLineaCtx.incidenciaId) || {};
+    ${(modalLineaCtx && (modalLineaCtx.source !== 'nueva' || editingId != null)) ? (()=>{
+      const incF = modalLineaCtx.source === 'nueva' ? header : (incidencias.find(i=>i.id===modalLineaCtx.incidenciaId) || {});
       const fr = esFechaISO(incF.fechaRecepcion) ? incF.fechaRecepcion : '';
       const fd = fr ? sumarDiasISO(fr, DIAS_PLAZO_DESTRUCCION) : '';
       return `<div class="field span2" id="ld_fechaRecepBox">
@@ -3210,7 +3210,7 @@ function buildLineaModalBody(l, bloques){
           <label for="ld_fechaDestruccion" style="min-height:0;">Fecha de destrucción (+${DIAS_PLAZO_DESTRUCCION} días)</label>
           <input type="text" id="ld_fechaDestruccion" value="${fd ? fmtDate(fd) : ''}" placeholder="—" readonly disabled>
         </div>
-        <div class="hint" style="flex:1 1 240px;align-self:flex-end;padding-bottom:11px;margin:0;">Es una fecha de toda la incidencia (no de la línea): si la cambias aquí, cambia para todas sus líneas. Déjala vacía si la mercancía aún no ha llegado.</div>
+        <div class="hint" style="flex:1 1 240px;align-self:flex-end;padding-bottom:11px;margin:0;">Es una fecha de toda la incidencia (no de la línea): si la cambias aquí, cambia para todas sus líneas. Déjala vacía si la mercancía aún no ha llegado.${modalLineaCtx.source === 'nueva' ? ' Se guarda al pulsar «Guardar cambios» de la incidencia.' : ''}</div>
       </div>
     </div>`;
     })() : ''}
@@ -3658,7 +3658,7 @@ function guardarLineaDetalle(){
   if(!l) return;
   const before = JSON.parse(JSON.stringify(l));
   const ldFRsave = document.getElementById('ld_fechaRecepcion');
-  const fechaRecepNueva = (source!=='nueva' && ldFRsave) ? (esFechaISO(ldFRsave.value) ? ldFRsave.value : '') : null;
+  const fechaRecepNueva = ldFRsave ? (esFechaISO(ldFRsave.value) ? ldFRsave.value : '') : null;
 
   if(l.manual){
     const unidadesRaw = document.getElementById('ld_unidadesManual').value;
@@ -3761,6 +3761,8 @@ function guardarLineaDetalle(){
 
   closeModal('modalLinea');
   if(source==='nueva'){
+    // En modo edición, la fecha de recepción se aplica a la incidencia al pulsar «Guardar cambios» de la incidencia
+    if(fechaRecepNueva !== null) header.fechaRecepcion = fechaRecepNueva;
     renderAll();
   } else {
     const inc = incidencias.find(i=>i.id===incidenciaId);
@@ -4434,6 +4436,9 @@ async function guardarIncidencia(){
     t.numExpedicion = String(header.numExpedicion || '').replace(/\D/g,'').slice(0,20);
     t.direccionRecogida = (header.direccionRecogida || '').trim().slice(0,250);
     t.empresaGrupo = header.empresaGrupo || '';
+    const frNueva = esFechaISO(header.fechaRecepcion) ? header.fechaRecepcion : '';
+    const frAntes = esFechaISO(inc.fechaRecepcion) ? inc.fechaRecepcion : '';
+    t.fechaRecepcion = frNueva;
     t.lineas = activas.map(l=> Object.assign({}, l, {marcada:false}));
     t.estado = computeHeaderEstado(activas, header.manualEnEspera);
     t.recogida = computeHeaderRecogida(activas);
@@ -4442,6 +4447,7 @@ async function guardarIncidencia(){
     t.origenes = origenesDistintos(activas);
     t.accionesRealizar = cloneAccionesRealizar(header.accionesRealizar);
     t.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: diffCambiosIncidencia(beforeInc, t) });
+    if(frNueva !== frAntes) t.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: `Fecha de recepción en Almesa: ${frNueva ? fmtDate(frNueva) : 'quitada'} (antes: ${frAntes ? fmtDate(frAntes) : 'sin fecha'})` });
     if(CLOUD){
       try{ await nubeGuardar(t); }
       catch(e){ nubeError(e, inc); return; }
@@ -4516,6 +4522,7 @@ function editarIncidencia(id){
     comunicacionCliente: inc.comunicacionCliente.map(f=> Object.assign({}, f)),
     documentos: inc.documentos.map(f=> Object.assign({}, f)),
     dcFacturaOriginal: (inc.dcFacturaOriginal||[]).map(f=> Object.assign({}, f)), dcAlbaranOriginal: (inc.dcAlbaranOriginal||[]).map(f=> Object.assign({}, f)), dcAlbaranReposicion: (inc.dcAlbaranReposicion||[]).map(f=> Object.assign({}, f)), dcAbonoFactura: (inc.dcAbonoFactura||[]).map(f=> Object.assign({}, f)), dcFacturaCargo: (inc.dcFacturaCargo||[]).map(f=> Object.assign({}, f)), dcFotosDanos: (inc.dcFotosDanos||[]).map(f=> Object.assign({}, f)), cartaCargo: normCarta(inc.cartaCargo),
+    fechaRecepcion: esFechaISO(inc.fechaRecepcion) ? inc.fechaRecepcion : '',
     accionesRealizar: cloneAccionesRealizar(inc.accionesRealizar),
     referenciaCliente: inc.referenciaCliente || '', clienteFinal: inc.clienteFinal || '', personaContacto: inc.personaContacto || '', telefonoContacto: inc.telefonoContacto || '', numExpedicion: inc.numExpedicion || '', direccionRecogida: inc.direccionRecogida || '', empresaGrupo: inc.empresaGrupo || '',
     observaciones: inc.observaciones || ''
