@@ -879,6 +879,10 @@
         </div>
         <div id="filtrosActivos" class="filtros-activos" aria-live="polite"></div>
         <div class="card-body" id="filtrosCuerpo" hidden>
+          <div class="filter-grid filtros-r0" style="margin-bottom:12px;grid-template-columns:minmax(150px,1fr) minmax(220px,2fr);max-width:760px;">
+            <div class="field"><label title="Busca las líneas cuyo código de artículo contenga lo escrito">Cód. artículo</label><input type="text" id="fCodArticulo" class="mono" placeholder="Código del artículo"></div>
+            <div class="field"><label title="Busca las líneas cuya descripción contenga todas las palabras escritas (sin distinguir mayúsculas ni tildes)">Descripción</label><input type="text" id="fDescripcion" placeholder="Palabras de la descripción del artículo"></div>
+          </div>
           <div class="filter-grid filtros-r1">
             <div class="field"><label>Empresa</label><select id="fEmpresa" multiple></select></div>
             <div class="field"><label>Nº incidencia</label><input type="text" id="fNum" class="mono"></div>
@@ -2298,7 +2302,8 @@ function renderConsultaDestruccion(list){
   const vista = document.getElementById('destruccionVista').value;
   // Una fila por LÍNEA (cada línea se destruye por separado)
   let filas = [];
-  list.forEach(inc=> lineasDestruccion(inc, vista).forEach(l=> filas.push({ inc, l })));
+  const fArt = filtroArticulo();
+  list.forEach(inc=> lineasDestruccion(inc, vista).forEach(l=>{ if(lineaArticuloOk(l, fArt)) filas.push({ inc, l }); }));
   const campo = consultaSort.field, mul = consultaSort.dir === 'desc' ? -1 : 1;
   if(campo === 'fechaRecepcion' || campo === 'fechaDestruccion' || campo === 'destruida'){
     const val = f => campo === 'fechaRecepcion' ? (fechaRecepcionLinea(f.inc, f.l) || '9999-99-99') : (campo === 'fechaDestruccion' ? (fechaDestruccionLinea(f.inc, f.l) || '9999-99-99') : (lineaDestruida(f.inc, f.l) ? '1' : '0'));
@@ -5707,7 +5712,8 @@ const FILTROS_CONSULTA = [
   {id:'fClienteFinal',label:'Cliente final'},{id:'fAlbaran',label:'Albarán'},{id:'fRefCliente',label:'Ref. cliente'},
   {id:'fOrigen',label:'Origen',multi:true},{id:'fEstado',label:'Estado',multi:true},{id:'fRecogida',label:'Recogida',multi:true},{id:'fCargoAgencia',label:'Cargo agencia',multi:true},
   {id:'fAccion',label:'Acción',multi:true},{id:'fMotivo',label:'Motivo',multi:true},{id:'fSubmotivo',label:'Submotivo',multi:true},{id:'fCaso',label:'Caso',multi:true},
-  {id:'fFechaDesde',label:'Apertura desde'},{id:'fFechaHasta',label:'Apertura hasta'}
+  {id:'fFechaDesde',label:'Apertura desde'},{id:'fFechaHasta',label:'Apertura hasta'},
+  {id:'fCodArticulo',label:'Cód. artículo'},{id:'fDescripcion',label:'Descripción'}
 ];
 const FILTROS_MULTI = FILTROS_CONSULTA.filter(f=>f.multi).map(f=>f.id);
 
@@ -5855,7 +5861,7 @@ function initFiltrosConsulta(){
 }
 function limpiarFiltros(){
   expandedId = null;
-  ['fNum','fUsuario','fCliente','fAlbaran','fRefCliente','fClienteFinal','fFechaDesde','fFechaHasta'].forEach(id=> document.getElementById(id).value='');
+  ['fNum','fUsuario','fCliente','fAlbaran','fRefCliente','fClienteFinal','fFechaDesde','fFechaHasta','fCodArticulo','fDescripcion'].forEach(id=> document.getElementById(id).value='');
   FILTROS_MULTI.forEach(id=> msFijar(id, []));
   refrescarOpcionesMotivos();
   renderConsulta();
@@ -5922,6 +5928,20 @@ function aplicarIndicadoresOrdenConsulta(){
     arrow.textContent = (consultaSort.field===field) ? (consultaSort.dir==='asc' ? '▲' : '▼') : '';
   }));
 }
+/* Búsqueda por artículo (código y descripción): sin distinguir mayúsculas ni tildes; en la descripción deben aparecer todas las palabras escritas */
+function normTxt(s){ return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function filtroArticulo(){
+  const cod = normTxt((document.getElementById('fCodArticulo') || {}).value || '').trim();
+  const desc = normTxt((document.getElementById('fDescripcion') || {}).value || '').trim().split(/\s+/).filter(Boolean);
+  return { cod, desc, activo: !!(cod || desc.length) };
+}
+function lineaArticuloOk(l, fa){
+  fa = fa || filtroArticulo();
+  if(!fa.activo) return true;
+  if(fa.cod && !normTxt(l.codArticulo).includes(fa.cod)) return false;
+  const d = normTxt(l.descripcion);
+  return fa.desc.every(w=> d.includes(w));
+}
 function renderConsulta(){
   const num = document.getElementById('fNum').value.trim();
   const usuario = document.getElementById('fUsuario').value.trim().toLowerCase();
@@ -5956,8 +5976,10 @@ function renderConsulta(){
     return true;
   };
   // Criterios de línea (Origen, Recogida, Cargo agencia, Acción, Motivo, Submotivo y Caso): una línea los cumple todos a la vez
-  const hayFiltroLinea = origen.length || recogida.length || cargoAgencia.length || accion.length || motivoQ.length || submotivoQ.length || casoQ.length;
+  const fArt = filtroArticulo();
+  const hayFiltroLinea = origen.length || recogida.length || cargoAgencia.length || accion.length || motivoQ.length || submotivoQ.length || casoQ.length || fArt.activo;
   const lineaOk = (inc, l)=> !l.eliminada
+    && lineaArticuloOk(l, fArt)
     && (!origen.length || origen.includes(l.origen||''))
     && (!recogida.length || recogida.includes(l.recogida||''))
     && (!cargoAgencia.length || cargoAgencia.includes(l.cargoAgencia||''))
@@ -5979,6 +6001,7 @@ function renderConsulta(){
     if(recogida.length && !recogida.some(r=> (inc.recogidas||[]).includes(r))) return false;
     if(cargoAgencia.length && !cargoAgencia.includes(inc.cargoAgencia||'')) return false;
     if(accion.length && !accion.some(a=> lineasConAccionCount(inc, a)>0)) return false;
+    if(fArt.activo && !(inc.lineas||[]).some(l=> !l.eliminada && lineaArticuloOk(l, fArt))) return false;
     if(motivoQ.length || submotivoQ.length || casoQ.length){
       // Motivo, Submotivo y Caso tienen que cumplirse en la MISMA línea (no repartidos entre líneas distintas)
       const hay = (inc.lineas||[]).some(l=> !l.eliminada
