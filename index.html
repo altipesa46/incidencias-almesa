@@ -581,6 +581,33 @@
   .login-error{font-size:12px;color:var(--danger);margin:-4px 0 12px;min-height:14px;}
   body:not(.app-auth) .app{display:none;}
   body.app-auth .login-screen{display:none;}
+
+  /* v122 · Tipografía unificada con la de Consulta (11,5 px en tablas, 10 px en cabeceras) en el resto de pantallas y formularios.
+     No afecta al perfil de almacén (móvil), que mantiene sus tamaños grandes. Las reglas propias de Consulta (por id) siguen mandando. */
+  body:not(.perfil-almacen){font-size:12px;}
+  body:not(.perfil-almacen) table{font-size:11.5px;}
+  body:not(.perfil-almacen) th{font-size:10px;padding:7px 8px;}
+  body:not(.perfil-almacen) td{padding:7px 8px;}
+  body:not(.perfil-almacen) .field label{font-size:11px;}
+  body:not(.perfil-almacen) input[type=text],body:not(.perfil-almacen) input[type=tel],body:not(.perfil-almacen) input[type=date],body:not(.perfil-almacen) input[type=number],body:not(.perfil-almacen) input[type=password],body:not(.perfil-almacen) select,body:not(.perfil-almacen) textarea{font-size:12px;padding:10px 10px;}
+  body:not(.perfil-almacen) button.btn{font-size:12px;padding:8px 13px;}
+  body:not(.perfil-almacen) button.btn-sm{font-size:11px;padding:4px 9px;}
+  body:not(.perfil-almacen) .card-head h2{font-size:14px;}
+  body:not(.perfil-almacen) .card-head .hint{font-size:11px;}
+  body:not(.perfil-almacen) .modal-head h3{font-size:14px;}
+  body:not(.perfil-almacen) .selected-chip{font-size:11.5px;}
+  body:not(.perfil-almacen) .linea-top .codigo{font-size:12px;}
+  body:not(.perfil-almacen) .linea-top .desc{font-size:12px;}
+  body:not(.perfil-almacen) .linea-top .nums,body:not(.perfil-almacen) .linea-bottom{font-size:11px;}
+  body:not(.perfil-almacen) .linea-field .lf-value{font-size:11.5px;}
+  body:not(.perfil-almacen) .linea-detail-table tbody td{font-size:11.5px;}
+  body:not(.perfil-almacen) .search-row .name{font-size:12px;}
+  body:not(.perfil-almacen) .search-row .sub{font-size:11px;}
+  body:not(.perfil-almacen) .ms-opt{font-size:12px;}
+  body:not(.perfil-almacen) .checkall-label{font-size:11.5px;}
+  body:not(.perfil-almacen) .historial-item .historial-desc{font-size:11.5px;}
+  body:not(.perfil-almacen) .pill{font-size:10.5px;}
+  body:not(.perfil-almacen) .toast{font-size:12px;}
 </style>
 
 <div class="login-screen" id="loginScreen">
@@ -3167,6 +3194,27 @@ function buildLineaModalBody(l, bloques){
       ${accionMultiple ? `<span class="hint" style="display:block;margin-top:4px;">Esta línea tiene varias acciones asignadas a la vez, cada una sobre una cantidad distinta de sus unidades. Este campo no permite editarlas todas juntas: para quitar o cambiar alguna, usa «✕ Quitar» sobre esa acción en «Acción a realizar».</span>` : ''}
     </div>
 
+    ${(modalLineaCtx && modalLineaCtx.source !== 'nueva') ? (()=>{
+      const incF = incidencias.find(i=>i.id===modalLineaCtx.incidenciaId) || {};
+      const fr = esFechaISO(incF.fechaRecepcion) ? incF.fechaRecepcion : '';
+      const fd = fr ? sumarDiasISO(fr, DIAS_PLAZO_DESTRUCCION) : '';
+      return `<div class="field span2" id="ld_fechaRecepBox">
+      <div class="divider" style="margin:2px 0 14px 0;"></div>
+      <span class="section-label">Recepción en Almesa y destrucción</span>
+      <div class="recep-fila" style="align-items:flex-start;">
+        <div class="field" style="flex:0 0 190px;">
+          <label for="ld_fechaRecepcion" style="min-height:0;">Fecha de recepción en Almesa</label>
+          <input type="date" id="ld_fechaRecepcion" value="${fr}">
+        </div>
+        <div class="field" style="flex:0 0 190px;">
+          <label for="ld_fechaDestruccion" style="min-height:0;">Fecha de destrucción (+${DIAS_PLAZO_DESTRUCCION} días)</label>
+          <input type="text" id="ld_fechaDestruccion" value="${fd ? fmtDate(fd) : ''}" placeholder="—" readonly disabled>
+        </div>
+        <div class="hint" style="flex:1 1 240px;align-self:flex-end;padding-bottom:11px;margin:0;">Es una fecha de toda la incidencia (no de la línea): si la cambias aquí, cambia para todas sus líneas. Déjala vacía si la mercancía aún no ha llegado.</div>
+      </div>
+    </div>`;
+    })() : ''}
+
     <div class="field span2" id="ld_recepcionBox" hidden>
       <div class="divider" style="margin:2px 0 14px 0;"></div>
       <span class="section-label">Recepción de mercancía</span>
@@ -3502,6 +3550,11 @@ function wireLineaModalEvents(l){
   updateRecepcionBoxVisibility();
   document.getElementById('ld_origen').addEventListener('change', ()=>{ updateCargoAgenciaVisibility(); updateCargoAgenciaDocsVisibility(); updateRecepcionBoxVisibility(); desplegarCalculoCargo(); });
   document.getElementById('ld_recogida').addEventListener('change', updateRecepcionBoxVisibility);
+  const ldFR = document.getElementById('ld_fechaRecepcion');
+  if(ldFR) ldFR.addEventListener('input', ()=>{
+    const d = document.getElementById('ld_fechaDestruccion');
+    if(d) d.value = esFechaISO(ldFR.value) ? fmtDate(sumarDiasISO(ldFR.value, DIAS_PLAZO_DESTRUCCION)) : '';
+  });
   document.getElementById('ld_cargoAgencia').addEventListener('change', ()=>{ updateCargoAgenciaDocsVisibility(); updateRecepcionBoxVisibility(); desplegarCalculoCargo(); });
 
   document.getElementById('ld_dzDefecto').addEventListener('click', ()=> document.getElementById('ld_fileDefecto').click());
@@ -3604,6 +3657,8 @@ function guardarLineaDetalle(){
   const l = getLinea(lineaId, source, incidenciaId);
   if(!l) return;
   const before = JSON.parse(JSON.stringify(l));
+  const ldFRsave = document.getElementById('ld_fechaRecepcion');
+  const fechaRecepNueva = (source!=='nueva' && ldFRsave) ? (esFechaISO(ldFRsave.value) ? ldFRsave.value : '') : null;
 
   if(l.manual){
     const unidadesRaw = document.getElementById('ld_unidadesManual').value;
@@ -3712,8 +3767,15 @@ function guardarLineaDetalle(){
     const cambiosLinea = diffCambiosLinea(before, l);
     const descCambio = cambiosLinea.length ? `Línea ${l.codArticulo}: ${cambiosLinea.join('; ')}` : `Línea ${l.codArticulo} revisada (sin cambios de datos detectados).`;
     inc.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: descCambio });
+    // Fecha de recepción en Almesa (es de la incidencia entera: se guarda con la incidencia, igual que el resto de datos de la línea)
+    if(fechaRecepNueva !== null && fechaRecepNueva !== (esFechaISO(inc.fechaRecepcion) ? inc.fechaRecepcion : '')){
+      const antes = esFechaISO(inc.fechaRecepcion) ? fmtDate(inc.fechaRecepcion) : 'sin fecha';
+      inc.fechaRecepcion = fechaRecepNueva;
+      inc.historial.push({ fecha:new Date().toISOString(), usuario: state.usuario||'—', cambio: `Fecha de recepción en Almesa: ${fechaRecepNueva ? fmtDate(fechaRecepNueva) : 'quitada'} (antes: ${antes}), cambiada desde la línea ${l.codArticulo}` });
+    }
     recomputeIncidenciaHeader(inc);
     persistIncidencias();
+    actualizarContadorDestruccion();
     renderConsulta();
   }
   toast('Línea guardada.');
